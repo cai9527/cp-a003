@@ -210,3 +210,15 @@ export const getStatusColor = (status: string): string => {
 export const classNames = (...classes: (string | boolean | undefined)[]): string => {
   return classes.filter(Boolean).join(' ');
 };
+
+export const getExpiryStatus = (
+  expiryDate: string,
+  warningDays: number = 30
+): { variant: 'danger' | 'warning' | 'success'; text: string } => {
+  const days = Math.ceil(
+    (new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  );
+  if (days < 0) return { variant: 'danger', text: '已过期' };
+  if (days < warningDays) return { variant: 'warning', text: `${days}天后到期` };
+  return { variant: 'success', text: '正常' };
+};

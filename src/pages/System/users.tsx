@@ -1,29 +1,23 @@
 import { useState } from 'react';
-import { Plus, Search, Filter, Edit2, Trash2, Eye, User as UserIcon, Shield, Lock, Save, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Eye, User as UserIcon, Shield, Lock } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import DataTable from '@/components/UI/DataTable';
 import StatusBadge from '@/components/UI/StatusBadge';
 import Modal from '@/components/UI/Modal';
 import { ToastContainer } from '@/components/UI/Toast';
-import { useToast } from '@/hooks/useToast';
+import SearchFilterBar from '@/components/UI/SearchFilterBar';
+import DeleteConfirmModal from '@/components/UI/DeleteConfirmModal';
+import FormField, { FormInput } from '@/components/UI/FormField';
+import SectionHeader from '@/components/UI/SectionHeader';
+import DetailItem from '@/components/UI/DetailItem';
+import FormModalFooter from '@/components/UI/FormModalFooter';
+import { useCrudPage } from '@/hooks/useCrudPage';
 import { ROLES } from '@/types';
 import { formatDate, classNames, validatePhone } from '@/utils';
 import type { User, Role } from '@/types';
 
 export default function UsersPage() {
   const { users, loading, deleteUser, addUser, updateUser } = useAuthStore();
-  const [searchText, setSearchText] = useState('');
-  const [roleFilter, setRoleFilter] = useState<string>('all');
-  const [page, setPage] = useState(1);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showFormModal, setShowFormModal] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [formLoading, setFormLoading] = useState(false);
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const { toasts, removeToast, success, error } = useToast();
-  const pageSize = 10;
 
   const defaultFormData = {
     username: '',
@@ -37,46 +31,45 @@ export default function UsersPage() {
 
   const [formData, setFormData] = useState(defaultFormData);
 
-  const filteredUsers = users.filter((u) => {
-    const matchSearch =
-      u.name.includes(searchText) ||
-      u.username.includes(searchText) ||
-      u.phone.includes(searchText);
-    const matchRole = roleFilter === 'all' || u.role === roleFilter;
-    return matchSearch && matchRole;
+  const crud = useCrudPage<any>({
+    defaultFormData,
+    onAdd: (data) => addUser(data),
+    onUpdate: (id, data) => updateUser(id, data),
+    onDelete: (id) => deleteUser(id),
+    addSuccessMessage: '用户添加成功',
+    updateSuccessMessage: '用户信息更新成功',
+    deleteSuccessMessage: '用户删除成功',
+    validateForm: (data) => {
+      const errors: Record<string, string> = {};
+      if (!data.username.trim()) {
+        errors.username = '请输入用户名';
+      } else if (data.username.length < 3) {
+        errors.username = '用户名至少3个字符';
+      }
+      if (!data.name.trim()) {
+        errors.name = '请输入姓名';
+      }
+      if (!data.phone.trim()) {
+        errors.phone = '请输入联系电话';
+      } else if (!validatePhone(data.phone)) {
+        errors.phone = '手机号码格式不正确';
+      }
+      if (data.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
+        errors.email = '邮箱格式不正确';
+      }
+      if (!data.role) {
+        errors.role = '请选择角色';
+      }
+      return errors;
+    },
   });
 
-  const pagedUsers = filteredUsers.slice((page - 1) * pageSize, page * pageSize);
-
-  const handleViewDetail = (user: User) => {
-    setSelectedUser(user);
-    setShowDetailModal(true);
-  };
-
-  const handleDelete = (user: User) => {
-    setSelectedUser(user);
-    setShowDeleteConfirm(true);
-  };
-
-  const confirmDelete = () => {
-    if (selectedUser) {
-      deleteUser(selectedUser.id);
-      setShowDeleteConfirm(false);
-      setSelectedUser(null);
-      success('用户删除成功');
-    }
-  };
-
   const handleAdd = () => {
-    setIsEditing(false);
+    crud.handleAdd();
     setFormData(defaultFormData);
-    setFormErrors({});
-    setShowFormModal(true);
   };
 
   const handleEdit = (user: User) => {
-    setIsEditing(true);
-    setSelectedUser(user);
     setFormData({
       username: user.username,
       name: user.name,
@@ -86,74 +79,37 @@ export default function UsersPage() {
       department: user.department || '',
       status: user.status,
     });
-    setFormErrors({});
-    setShowFormModal(true);
-  };
-
-  const validateForm = (): boolean => {
-    const errors: Record<string, string> = {};
-
-    if (!formData.username.trim()) {
-      errors.username = '请输入用户名';
-    } else if (formData.username.length < 3) {
-      errors.username = '用户名至少3个字符';
-    }
-
-    if (!formData.name.trim()) {
-      errors.name = '请输入姓名';
-    }
-
-    if (!formData.phone.trim()) {
-      errors.phone = '请输入联系电话';
-    } else if (!validatePhone(formData.phone)) {
-      errors.phone = '手机号码格式不正确';
-    }
-
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      errors.email = '邮箱格式不正确';
-    }
-
-    if (!formData.role) {
-      errors.role = '请选择角色';
-    }
-
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
-  const handleSubmit = async () => {
-    if (!validateForm()) {
-      error('请检查表单填写是否正确');
-      return;
-    }
-
-    setFormLoading(true);
-    try {
-      if (isEditing && selectedUser) {
-        await updateUser(selectedUser.id, formData);
-        success('用户信息更新成功');
-      } else {
-        await addUser(formData);
-        success('用户添加成功');
-      }
-      setShowFormModal(false);
-    } catch (err) {
-      error('操作失败，请重试');
-    } finally {
-      setFormLoading(false);
-    }
+    crud.handleEdit(user);
   };
 
   const handleFormChange = (field: string, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-    if (formErrors[field]) {
-      setFormErrors((prev) => {
+    if (crud.formErrors[field]) {
+      crud.setFormErrors((prev) => {
         const newErrors = { ...prev };
         delete newErrors[field];
         return newErrors;
       });
     }
   };
+
+  const handleSubmit = () => {
+    crud.handleSubmit(formData);
+  };
+
+  const filteredUsers = users.filter((u) => {
+    const matchSearch =
+      u.name.includes(crud.searchText) ||
+      u.username.includes(crud.searchText) ||
+      u.phone.includes(crud.searchText);
+    const matchRole = crud.statusFilter === 'all' || u.role === crud.statusFilter;
+    return matchSearch && matchRole;
+  });
+
+  const pagedUsers = filteredUsers.slice((crud.page - 1) * crud.pageSize, crud.page * crud.pageSize);
+
+  const selectedItem = crud.selectedItem as User | null;
+  const deleteTarget = crud.deleteTarget as User | null;
 
   const getStatusBadge = (status: User['status']) => {
     if (status === 'active') {
@@ -171,6 +127,11 @@ export default function UsersPage() {
       </div>
     );
   };
+
+  const roleFilterOptions = Object.entries(ROLES).map(([key, val]) => ({
+    value: key,
+    label: val.label,
+  }));
 
   const columns = [
     {
@@ -243,7 +204,7 @@ export default function UsersPage() {
       render: (row: User) => (
         <div className="flex items-center gap-1">
           <button
-            onClick={() => handleViewDetail(row)}
+            onClick={() => crud.handleViewDetail(row)}
             className="p-1.5 text-primary-600 hover:bg-primary-50 rounded transition-colors"
             title="查看详情"
           >
@@ -263,7 +224,7 @@ export default function UsersPage() {
             <Edit2 className="w-4 h-4" />
           </button>
           <button
-            onClick={() => handleDelete(row)}
+            onClick={() => crud.handleDelete(row)}
             className="p-1.5 text-danger-600 hover:bg-danger-50 rounded transition-colors"
             title="删除"
           >
@@ -304,62 +265,42 @@ export default function UsersPage() {
         })}
       </div>
 
-      <div className="card p-4">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="relative flex-1 min-w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
-            <input
-              type="text"
-              placeholder="搜索姓名、用户名、电话..."
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-neutral-500" />
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              className="px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
-            >
-              <option value="all">全部角色</option>
-              {Object.entries(ROLES).map(([key, val]) => (
-                <option key={key} value={key}>
-                  {val.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
+      <SearchFilterBar
+        searchText={crud.searchText}
+        onSearchChange={crud.setSearchText}
+        searchPlaceholder="搜索姓名、用户名、电话..."
+        filterValue={crud.statusFilter}
+        onFilterChange={crud.setStatusFilter}
+        filterOptions={roleFilterOptions}
+        filterLabel="全部角色"
+      />
 
       <DataTable
         columns={columns}
         data={pagedUsers}
         loading={loading}
         pagination={{
-          page,
-          pageSize,
+          page: crud.page,
+          pageSize: crud.pageSize,
           total: filteredUsers.length,
-          onPageChange: setPage,
+          onPageChange: crud.setPage,
         }}
       />
 
-      {showDetailModal && selectedUser && (
+      {crud.showDetailModal && selectedItem && (
         <Modal
-          open={showDetailModal}
-          onClose={() => setShowDetailModal(false)}
+          open={crud.showDetailModal}
+          onClose={crud.closeDetailModal}
           title="用户详情"
           size="lg"
         >
           <div className="space-y-6">
             <div className="flex items-start gap-6">
               <div className="w-24 h-24 rounded-xl bg-primary-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-                {selectedUser.avatar ? (
+                {selectedItem.avatar ? (
                   <img
-                    src={selectedUser.avatar}
-                    alt={selectedUser.name}
+                    src={selectedItem.avatar}
+                    alt={selectedItem.name}
                     className="w-full h-full object-cover"
                   />
                 ) : (
@@ -368,67 +309,44 @@ export default function UsersPage() {
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
-                  <h3 className="text-xl font-bold text-neutral-800">{selectedUser.name}</h3>
-                  {getStatusBadge(selectedUser.status)}
+                  <h3 className="text-xl font-bold text-neutral-800">{selectedItem.name}</h3>
+                  {getStatusBadge(selectedItem.status)}
                 </div>
                 <div className="flex items-center gap-2 mb-3">
-                  {getRoleBadge(selectedUser.role)}
+                  {getRoleBadge(selectedItem.role)}
                 </div>
                 <p className="text-sm text-neutral-500">
-                  {selectedUser.department && `${selectedUser.department} · `}
-                  {selectedUser.phone}
+                  {selectedItem.department && `${selectedItem.department} · `}
+                  {selectedItem.phone}
                 </p>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-4">
-                <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                  <div className="w-1 h-5 bg-primary-500 rounded-full" />
-                  基本信息
-                </h3>
+                <SectionHeader title="基本信息" color="primary" />
                 <div className="space-y-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-500">用户名</span>
-                    <span className="font-medium text-neutral-800">{selectedUser.username}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-500">联系电话</span>
-                    <span className="font-medium text-neutral-800">{selectedUser.phone}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-500">邮箱</span>
-                    <span className="font-medium text-neutral-800">{selectedUser.email}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-500">部门</span>
-                    <span className="font-medium text-neutral-800">{selectedUser.department || '-'}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-500">创建时间</span>
-                    <span className="font-medium text-neutral-800">
-                      {formatDate(selectedUser.createdAt)}
-                    </span>
-                  </div>
+                  <DetailItem label="用户名">{selectedItem.username}</DetailItem>
+                  <DetailItem label="联系电话">{selectedItem.phone}</DetailItem>
+                  <DetailItem label="邮箱">{selectedItem.email}</DetailItem>
+                  <DetailItem label="部门">{selectedItem.department || '-'}</DetailItem>
+                  <DetailItem label="创建时间">{formatDate(selectedItem.createdAt)}</DetailItem>
                 </div>
               </div>
               <div className="space-y-4">
-                <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                  <div className="w-1 h-5 bg-warning-500 rounded-full" />
-                  角色权限
-                </h3>
+                <SectionHeader title="角色权限" color="warning" />
                 <div className="card p-4 bg-neutral-50">
                   <div className="flex items-center gap-2 mb-3">
                     <Shield className="w-5 h-5 text-primary-500" />
                     <span className="font-medium text-neutral-800">
-                      {ROLES[selectedUser.role].label}
+                      {ROLES[selectedItem.role].label}
                     </span>
                   </div>
                   <p className="text-sm text-neutral-500 mb-3">
-                    {ROLES[selectedUser.role].description}
+                    {ROLES[selectedItem.role].description}
                   </p>
                   <div className="flex flex-wrap gap-1.5">
-                    {ROLES[selectedUser.role].permissions.slice(0, 8).map((perm) => (
+                    {ROLES[selectedItem.role].permissions.slice(0, 8).map((perm) => (
                       <span
                         key={perm}
                         className="px-2 py-0.5 bg-primary-100 text-primary-700 text-xs rounded"
@@ -436,9 +354,9 @@ export default function UsersPage() {
                         {perm}
                       </span>
                     ))}
-                    {ROLES[selectedUser.role].permissions.length > 8 && (
+                    {ROLES[selectedItem.role].permissions.length > 8 && (
                       <span className="px-2 py-0.5 bg-neutral-100 text-neutral-600 text-xs rounded">
-                        +{ROLES[selectedUser.role].permissions.length - 8}项
+                        +{ROLES[selectedItem.role].permissions.length - 8}项
                       </span>
                     )}
                   </div>
@@ -449,160 +367,77 @@ export default function UsersPage() {
         </Modal>
       )}
 
-      {showDeleteConfirm && selectedUser && (
-        <Modal
-          open={showDeleteConfirm}
-          onClose={() => setShowDeleteConfirm(false)}
-          title="确认删除"
-          size="sm"
-          footer={
-            <>
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="btn btn-default"
-              >
-                取消
-              </button>
-              <button onClick={confirmDelete} className="btn btn-danger">
-                确认删除
-              </button>
-            </>
-          }
-        >
-          <div className="text-center py-4">
-            <div className="w-16 h-16 mx-auto bg-danger-100 rounded-full flex items-center justify-center mb-4">
-              <Trash2 className="w-8 h-8 text-danger-500" />
-            </div>
-            <p className="text-lg font-medium text-neutral-800">
-              确定要删除用户 {selectedUser.name} 吗？
-            </p>
-            <p className="text-sm text-neutral-500 mt-2">此操作不可撤销，相关数据将被永久删除</p>
-          </div>
-        </Modal>
-      )}
+      <DeleteConfirmModal
+        open={crud.showDeleteConfirm}
+        onClose={crud.closeDeleteConfirm}
+        onConfirm={crud.confirmDelete}
+        itemName={deleteTarget?.name || ''}
+        itemType="用户"
+      />
 
-      {showFormModal && (
+      {crud.showFormModal && (
         <Modal
-          open={showFormModal}
-          onClose={() => setShowFormModal(false)}
-          title={isEditing ? '编辑用户' : '新增用户'}
+          open={crud.showFormModal}
+          onClose={crud.closeFormModal}
+          title={crud.isEditing ? '编辑用户' : '新增用户'}
           size="lg"
           footer={
-            <>
-              <button
-                onClick={() => setShowFormModal(false)}
-                className="btn btn-default"
-                disabled={formLoading}
-              >
-                <X className="w-4 h-4" />
-                取消
-              </button>
-              <button
-                onClick={handleSubmit}
-                className="btn btn-primary"
-                disabled={formLoading}
-              >
-                <Save className="w-4 h-4" />
-                {formLoading ? '保存中...' : '保存'}
-              </button>
-            </>
+            <FormModalFooter
+              onCancel={crud.closeFormModal}
+              onSubmit={handleSubmit}
+              loading={crud.formLoading}
+            />
           }
         >
           <div className="space-y-6">
             <div className="space-y-4">
-              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                <div className="w-1 h-5 bg-primary-500 rounded-full" />
-                基本信息
-              </h3>
+              <SectionHeader title="基本信息" color="primary" />
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    用户名 <span className="text-danger-500">*</span>
-                  </label>
-                  <input
+                <FormField label="用户名" required error={crud.formErrors.username}>
+                  <FormInput
                     type="text"
                     value={formData.username}
                     onChange={(e) => handleFormChange('username', e.target.value)}
                     placeholder="请输入用户名"
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.username ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.username}
                   />
-                  {formErrors.username && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.username}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    姓名 <span className="text-danger-500">*</span>
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="姓名" required error={crud.formErrors.name}>
+                  <FormInput
                     type="text"
                     value={formData.name}
                     onChange={(e) => handleFormChange('name', e.target.value)}
                     placeholder="请输入姓名"
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.name ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.name}
                   />
-                  {formErrors.name && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.name}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    联系电话 <span className="text-danger-500">*</span>
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="联系电话" required error={crud.formErrors.phone}>
+                  <FormInput
                     type="text"
                     value={formData.phone}
                     onChange={(e) => handleFormChange('phone', e.target.value)}
                     placeholder="请输入联系电话"
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.phone ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.phone}
                   />
-                  {formErrors.phone && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.phone}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    邮箱
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="邮箱" error={crud.formErrors.email}>
+                  <FormInput
                     type="email"
                     value={formData.email}
                     onChange={(e) => handleFormChange('email', e.target.value)}
                     placeholder="请输入邮箱"
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.email ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.email}
                   />
-                  {formErrors.email && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.email}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    部门
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="部门">
+                  <FormInput
                     type="text"
                     value={formData.department}
                     onChange={(e) => handleFormChange('department', e.target.value)}
                     placeholder="请输入部门"
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    状态
-                  </label>
+                </FormField>
+                <FormField label="状态">
                   <div className="flex items-center gap-4 py-2">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
@@ -625,19 +460,13 @@ export default function UsersPage() {
                       <span className="text-sm text-neutral-700">禁用</span>
                     </label>
                   </div>
-                </div>
+                </FormField>
               </div>
             </div>
 
             <div className="space-y-4">
-              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                <div className="w-1 h-5 bg-warning-500 rounded-full" />
-                角色权限
-              </h3>
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-2">
-                  用户角色 <span className="text-danger-500">*</span>
-                </label>
+              <SectionHeader title="角色权限" color="warning" />
+              <FormField label="用户角色" required error={crud.formErrors.role}>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {Object.entries(ROLES).map(([key, val]) => (
                     <label
@@ -667,16 +496,13 @@ export default function UsersPage() {
                     </label>
                   ))}
                 </div>
-                {formErrors.role && (
-                  <p className="text-xs text-danger-500 mt-1">{formErrors.role}</p>
-                )}
-              </div>
+              </FormField>
             </div>
           </div>
         </Modal>
       )}
 
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
+      <ToastContainer toasts={crud.toasts} onRemove={crud.removeToast} />
     </div>
   );
 }

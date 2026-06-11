@@ -1,7 +1,5 @@
 import { useState } from 'react';
 import {
-  Search,
-  Filter,
   Eye,
   CheckCircle,
   XCircle,
@@ -16,6 +14,9 @@ import { useSafetyStore } from '@/store/useSafetyStore';
 import DataTable from '@/components/UI/DataTable';
 import StatusBadge from '@/components/UI/StatusBadge';
 import Modal from '@/components/UI/Modal';
+import SearchFilterBar from '@/components/UI/SearchFilterBar';
+import SectionHeader from '@/components/UI/SectionHeader';
+import DetailItem, { DetailRow } from '@/components/UI/DetailItem';
 import { ALERT_LEVEL, ALERT_STATUS, ALERT_TYPE } from '@/types';
 import { formatDateTime, classNames } from '@/utils';
 import type { SafetyAlert } from '@/types';
@@ -262,47 +263,26 @@ export default function SafetyPage() {
         </div>
       </div>
 
-      <div className="card p-4">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="relative flex-1 min-w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
-            <input
-              type="text"
-              placeholder="搜索车牌号、驾驶员、预警描述..."
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-neutral-500" />
-            <select
-              value={levelFilter}
-              onChange={(e) => setLevelFilter(e.target.value)}
-              className="px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
-            >
-              <option value="all">全部级别</option>
-              {Object.entries(ALERT_LEVEL).map(([key, val]) => (
-                <option key={key} value={key}>
-                  {val.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
-            >
-              <option value="all">全部状态</option>
-              {Object.entries(ALERT_STATUS).map(([key, val]) => (
-                <option key={key} value={key}>
-                  {val.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
+      <SearchFilterBar
+        searchText={searchText}
+        onSearchChange={setSearchText}
+        searchPlaceholder="搜索车牌号、驾驶员、预警描述..."
+        filterValue={levelFilter}
+        onFilterChange={setLevelFilter}
+        filterOptions={Object.entries(ALERT_LEVEL).map(([key, val]) => ({ value: key, label: val.label }))}
+        filterLabel="全部级别"
+      >
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
+        >
+          <option value="all">全部状态</option>
+          {Object.entries(ALERT_STATUS).map(([key, val]) => (
+            <option key={key} value={key}>{val.label}</option>
+          ))}
+        </select>
+      </SearchFilterBar>
 
       <DataTable
         columns={columns}
@@ -350,69 +330,38 @@ export default function SafetyPage() {
 
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-4">
-                <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                  <div className="w-1 h-5 bg-primary-500 rounded-full" />
-                  预警信息
-                </h3>
+                <SectionHeader title="预警信息" color="primary" />
                 <div className="space-y-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-500">预警类型</span>
-                    <span className="font-medium text-neutral-800">
-                      {ALERT_TYPE[selectedAlert.type]?.label}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-500">预警级别</span>
-                    <span className="font-medium text-neutral-800">
-                      {ALERT_LEVEL[selectedAlert.level]?.label}
-                    </span>
-                  </div>
+                  <DetailRow label="预警类型">{ALERT_TYPE[selectedAlert.type]?.label}</DetailRow>
+                  <DetailRow label="预警级别">{ALERT_LEVEL[selectedAlert.level]?.label}</DetailRow>
                   {selectedAlert.type === 'speeding' && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-neutral-500">当前车速</span>
-                      <span className="font-medium text-danger-600">{selectedAlert.speed} km/h</span>
-                    </div>
+                    <DetailRow label="当前车速">
+                      <span className="text-danger-600">{selectedAlert.speed} km/h</span>
+                    </DetailRow>
                   )}
                   {selectedAlert.type === 'fatigue' && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-neutral-500">连续驾驶时长</span>
-                      <span className="font-medium text-warning-600">{selectedAlert.duration} 小时</span>
-                    </div>
+                    <DetailRow label="连续驾驶时长">
+                      <span className="text-warning-600">{selectedAlert.duration} 小时</span>
+                    </DetailRow>
                   )}
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-500">发生位置</span>
-                    <span className="font-medium text-neutral-800">{selectedAlert.location?.address || '-'}</span>
-                  </div>
+                  <DetailRow label="发生位置">{selectedAlert.location?.address || '-'}</DetailRow>
                 </div>
               </div>
               <div className="space-y-4">
-                <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                  <div className="w-1 h-5 bg-warning-500 rounded-full" />
-                  关联信息
-                </h3>
+                <SectionHeader title="关联信息" color="warning" />
                 <div className="space-y-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-500">车牌号</span>
-                    <span className="font-medium text-primary-600">{selectedAlert.vehiclePlate}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-500">驾驶员</span>
-                    <span className="font-medium text-neutral-800">{selectedAlert.driverName}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-500">所属车队</span>
-                    <span className="font-medium text-neutral-800">第一车队</span>
-                  </div>
+                  <DetailRow label="车牌号">
+                    <span className="text-primary-600">{selectedAlert.vehiclePlate}</span>
+                  </DetailRow>
+                  <DetailRow label="驾驶员">{selectedAlert.driverName}</DetailRow>
+                  <DetailRow label="所属车队">第一车队</DetailRow>
                 </div>
               </div>
             </div>
 
             {selectedAlert.status !== 'pending' && (
               <div className="space-y-4">
-                <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                  <div className="w-1 h-5 bg-success-500 rounded-full" />
-                  处理记录
-                </h3>
+                <SectionHeader title="处理记录" color="success" />
                 <div className="card p-4 bg-neutral-50">
                   <div className="flex items-center gap-3 mb-2">
                     {selectedAlert.status === 'processed' ? (
@@ -427,11 +376,9 @@ export default function SafetyPage() {
                       {formatDateTime(selectedAlert.processedAt!)}
                     </span>
                   </div>
-                  <p className="text-sm text-neutral-600">处理人：{selectedAlert.processedBy}</p>
+                  <DetailItem label="处理人">{selectedAlert.processedBy}</DetailItem>
                   {selectedAlert.remark && (
-                    <p className="text-sm text-neutral-600 mt-2">
-                      处理备注：{selectedAlert.remark}
-                    </p>
+                    <DetailItem label="处理备注" className="mt-2">{selectedAlert.remark}</DetailItem>
                   )}
                 </div>
               </div>

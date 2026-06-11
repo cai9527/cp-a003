@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useStatisticsStore } from '@/store/useStatisticsStore';
 import StatusBadge from '@/components/UI/StatusBadge';
+import SectionHeader from '@/components/UI/SectionHeader';
 import { formatDateTime, formatNumber } from '@/utils';
 
 export default function BackupPage() {
@@ -172,10 +173,7 @@ export default function BackupPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card p-6">
-          <h3 className="font-semibold text-neutral-800 mb-6 flex items-center gap-2">
-            <Settings className="w-5 h-5 text-primary-500" />
-            自动备份配置
-          </h3>
+          <SectionHeader title="自动备份配置" color="primary" className="mb-6" />
           <div className="space-y-4">
             <div className="flex items-center justify-between py-3 border-b border-neutral-100">
               <div>
@@ -217,10 +215,7 @@ export default function BackupPage() {
         </div>
 
         <div className="card p-6">
-          <h3 className="font-semibold text-neutral-800 mb-6 flex items-center gap-2">
-            <Upload className="w-5 h-5 text-primary-500" />
-            恢复数据
-          </h3>
+          <SectionHeader title="恢复数据" color="primary" className="mb-6" />
           <div className="space-y-4">
             <div className="p-4 bg-warning-50 rounded-lg border border-warning-200">
               <div className="flex items-start gap-3">
@@ -258,10 +253,7 @@ export default function BackupPage() {
       </div>
 
       <div className="card p-6">
-        <h3 className="font-semibold text-neutral-800 mb-6 flex items-center gap-2">
-          <Clock className="w-5 h-5 text-primary-500" />
-          备份历史记录
-        </h3>
+        <SectionHeader title="备份历史记录" color="primary" className="mb-6" />
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>

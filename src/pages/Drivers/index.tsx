@@ -1,95 +1,82 @@
 import { useState } from 'react';
-import { Plus, Search, Filter, Edit2, Trash2, Eye, Phone, FileText, Save, X } from 'lucide-react';
+import { Plus, Eye, FileText, Edit2, Trash2, Phone } from 'lucide-react';
 import { useDriverStore } from '@/store/useDriverStore';
+import { useCrudPage } from '@/hooks/useCrudPage';
 import DataTable from '@/components/UI/DataTable';
 import StatusBadge from '@/components/UI/StatusBadge';
 import Modal from '@/components/UI/Modal';
+import SearchFilterBar from '@/components/UI/SearchFilterBar';
+import DeleteConfirmModal from '@/components/UI/DeleteConfirmModal';
+import FormField, { FormInput, FormSelect } from '@/components/UI/FormField';
+import SectionHeader from '@/components/UI/SectionHeader';
+import DetailItem from '@/components/UI/DetailItem';
+import FormModalFooter from '@/components/UI/FormModalFooter';
+import StatusCountBar from '@/components/UI/StatusCountBar';
 import { ToastContainer } from '@/components/UI/Toast';
-import { useToast } from '@/hooks/useToast';
 import { DRIVER_STATUS, LICENSE_TYPES } from '@/types';
-import { formatDate, classNames, validatePhone, validateIdCard } from '@/utils';
+import { formatDate, classNames, validatePhone, validateIdCard, getExpiryStatus } from '@/utils';
 import type { Driver } from '@/types';
+
+const defaultFormData = {
+  name: '',
+  gender: 'male' as Driver['gender'],
+  phone: '',
+  idCard: '',
+  licenseNumber: '',
+  licenseType: 'B2',
+  licenseExpiry: formatDate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)),
+  hireDate: formatDate(new Date()),
+  status: 'on_duty' as Driver['status'],
+  drivingYears: 1,
+  qualificationCert: '',
+  qualificationExpiry: formatDate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)),
+  physicalExpiry: formatDate(new Date(Date.now() + 180 * 24 * 60 * 60 * 1000)),
+  emergencyContact: {
+    name: '',
+    phone: '',
+    relationship: '',
+  },
+  accidentCount: 0,
+  trainingRecords: [],
+};
 
 export default function DriversPage() {
   const { drivers, loading, deleteDriver, addDriver, updateDriver } = useDriverStore();
-  const [searchText, setSearchText] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [page, setPage] = useState(1);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showFormModal, setShowFormModal] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [formLoading, setFormLoading] = useState(false);
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const { toasts, removeToast, success, error } = useToast();
-  const pageSize = 10;
 
-  const defaultFormData = {
-    name: '',
-    gender: 'male' as Driver['gender'],
-    phone: '',
-    idCard: '',
-    licenseNumber: '',
-    licenseType: 'B2',
-    licenseExpiry: formatDate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)),
-    hireDate: formatDate(new Date()),
-    status: 'on_duty' as Driver['status'],
-    drivingYears: 1,
-    qualificationCert: '',
-    qualificationExpiry: formatDate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)),
-    physicalExpiry: formatDate(new Date(Date.now() + 180 * 24 * 60 * 60 * 1000)),
-    emergencyContact: {
-      name: '',
-      phone: '',
-      relationship: '',
+  const crud = useCrudPage<any>({
+    defaultFormData,
+    onAdd: (data) => addDriver(data),
+    onUpdate: (id, data) => updateDriver(id, data),
+    onDelete: (id) => deleteDriver(id),
+    addSuccessMessage: '驾驶员添加成功',
+    updateSuccessMessage: '驾驶员信息更新成功',
+    deleteSuccessMessage: '驾驶员删除成功',
+    validateForm: (data) => {
+      const errors: Record<string, string> = {};
+      if (!data.name.trim()) errors.name = '请输入姓名';
+      if (!data.phone.trim()) errors.phone = '请输入联系电话';
+      else if (!validatePhone(data.phone)) errors.phone = '手机号码格式不正确';
+      if (!data.idCard.trim()) errors.idCard = '请输入身份证号';
+      else if (!validateIdCard(data.idCard)) errors.idCard = '身份证号格式不正确';
+      if (!data.licenseNumber.trim()) errors.licenseNumber = '请输入驾驶证编号';
+      if (!data.licenseType) errors.licenseType = '请选择驾驶证类型';
+      if (!data.licenseExpiry) errors.licenseExpiry = '请选择驾驶证有效期';
+      if (!data.hireDate) errors.hireDate = '请选择入职日期';
+      if (data.drivingYears < 0) errors.drivingYears = '驾龄不能为负数';
+      if (data.emergencyContact.name && !data.emergencyContact.phone) errors.emergencyPhone = '请填写紧急联系人电话';
+      else if (data.emergencyContact.phone && !validatePhone(data.emergencyContact.phone)) errors.emergencyPhone = '紧急联系人电话格式不正确';
+      return errors;
     },
-    accidentCount: 0,
-    trainingRecords: [],
-  };
+  });
 
   const [formData, setFormData] = useState(defaultFormData);
 
-  const filteredDrivers = drivers.filter((d) => {
-    const matchSearch =
-      d.name.includes(searchText) ||
-      d.phone.includes(searchText) ||
-      d.licenseNumber.includes(searchText);
-    const matchStatus = statusFilter === 'all' || d.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
-
-  const pagedDrivers = filteredDrivers.slice((page - 1) * pageSize, page * pageSize);
-
-  const handleViewDetail = (driver: Driver) => {
-    setSelectedDriver(driver);
-    setShowDetailModal(true);
-  };
-
-  const handleDelete = (driver: Driver) => {
-    setSelectedDriver(driver);
-    setShowDeleteConfirm(true);
-  };
-
-  const confirmDelete = () => {
-    if (selectedDriver) {
-      deleteDriver(selectedDriver.id);
-      setShowDeleteConfirm(false);
-      setSelectedDriver(null);
-      success('驾驶员删除成功');
-    }
-  };
-
   const handleAdd = () => {
-    setIsEditing(false);
+    crud.handleAdd();
     setFormData(defaultFormData);
-    setFormErrors({});
-    setShowFormModal(true);
   };
 
   const handleEdit = (driver: Driver) => {
-    setIsEditing(true);
-    setSelectedDriver(driver);
     setFormData({
       name: driver.name,
       gender: driver.gender,
@@ -108,86 +95,17 @@ export default function DriversPage() {
       accidentCount: driver.accidentCount,
       trainingRecords: driver.trainingRecords,
     });
-    setFormErrors({});
-    setShowFormModal(true);
-  };
-
-  const validateForm = (): boolean => {
-    const errors: Record<string, string> = {};
-
-    if (!formData.name.trim()) {
-      errors.name = '请输入姓名';
-    }
-
-    if (!formData.phone.trim()) {
-      errors.phone = '请输入联系电话';
-    } else if (!validatePhone(formData.phone)) {
-      errors.phone = '手机号码格式不正确';
-    }
-
-    if (!formData.idCard.trim()) {
-      errors.idCard = '请输入身份证号';
-    } else if (!validateIdCard(formData.idCard)) {
-      errors.idCard = '身份证号格式不正确';
-    }
-
-    if (!formData.licenseNumber.trim()) {
-      errors.licenseNumber = '请输入驾驶证编号';
-    }
-
-    if (!formData.licenseType) {
-      errors.licenseType = '请选择驾驶证类型';
-    }
-
-    if (!formData.licenseExpiry) {
-      errors.licenseExpiry = '请选择驾驶证有效期';
-    }
-
-    if (!formData.hireDate) {
-      errors.hireDate = '请选择入职日期';
-    }
-
-    if (formData.drivingYears < 0) {
-      errors.drivingYears = '驾龄不能为负数';
-    }
-
-    if (formData.emergencyContact.name && !formData.emergencyContact.phone) {
-      errors.emergencyPhone = '请填写紧急联系人电话';
-    } else if (formData.emergencyContact.phone && !validatePhone(formData.emergencyContact.phone)) {
-      errors.emergencyPhone = '紧急联系人电话格式不正确';
-    }
-
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+    crud.handleEdit(driver);
   };
 
   const handleSubmit = async () => {
-    if (!validateForm()) {
-      error('请检查表单填写是否正确');
-      return;
-    }
-
-    setFormLoading(true);
-    try {
-      if (isEditing && selectedDriver) {
-        await updateDriver(selectedDriver.id, formData);
-        success('驾驶员信息更新成功');
-      } else {
-        await addDriver(formData);
-        success('驾驶员添加成功');
-      }
-      setShowFormModal(false);
-    } catch (err) {
-      error('操作失败，请重试');
-    } finally {
-      setFormLoading(false);
-    }
+    await crud.handleSubmit(formData);
   };
 
   const handleFormChange = (field: string, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-    if (formErrors[field]) {
-      setFormErrors((prev) => {
+    if (crud.formErrors[field]) {
+      crud.setFormErrors((prev) => {
         const newErrors = { ...prev };
         delete newErrors[field];
         return newErrors;
@@ -200,8 +118,8 @@ export default function DriversPage() {
       ...prev,
       emergencyContact: { ...prev.emergencyContact, [field]: value },
     }));
-    if (field === 'phone' && formErrors.emergencyPhone) {
-      setFormErrors((prev) => {
+    if (field === 'phone' && crud.formErrors.emergencyPhone) {
+      crud.setFormErrors((prev) => {
         const newErrors = { ...prev };
         delete newErrors.emergencyPhone;
         return newErrors;
@@ -209,17 +127,33 @@ export default function DriversPage() {
     }
   };
 
+  const filteredDrivers = drivers.filter((d) => {
+    const matchSearch =
+      d.name.includes(crud.searchText) ||
+      d.phone.includes(crud.searchText) ||
+      d.licenseNumber.includes(crud.searchText);
+    const matchStatus = crud.statusFilter === 'all' || d.status === crud.statusFilter;
+    return matchSearch && matchStatus;
+  });
+
+  const pagedDrivers = filteredDrivers.slice((crud.page - 1) * crud.pageSize, crud.page * crud.pageSize);
+
   const getStatusBadge = (status: Driver['status']) => {
     const config = DRIVER_STATUS[status];
     return <StatusBadge variant={config.color as any}>{config.label}</StatusBadge>;
   };
 
-  const getLicenseExpiryStatus = (date: string) => {
-    const days = Math.ceil((new Date(date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    if (days < 0) return { variant: 'danger' as const, text: '已过期' };
-    if (days < 90) return { variant: 'warning' as const, text: `${days}天后到期` };
-    return { variant: 'success' as const, text: '正常' };
-  };
+  const statusCountItems = Object.entries(DRIVER_STATUS).map(([key, val]) => ({
+    key,
+    label: val.label,
+    color: val.color,
+    count: drivers.filter((d) => d.status === key).length,
+  }));
+
+  const filterOptions = Object.entries(DRIVER_STATUS).map(([key, val]) => ({
+    value: key,
+    label: val.label,
+  }));
 
   const columns = [
     {
@@ -283,7 +217,7 @@ export default function DriversPage() {
       title: '驾照到期',
       width: '130px',
       render: (row: Driver) => {
-        const status = getLicenseExpiryStatus(row.licenseExpiry);
+        const status = getExpiryStatus(row.licenseExpiry, 90);
         return (
           <div>
             <div className="text-sm text-neutral-700">{formatDate(row.licenseExpiry)}</div>
@@ -301,7 +235,7 @@ export default function DriversPage() {
       render: (row: Driver) => (
         <div className="flex items-center gap-1">
           <button
-            onClick={() => handleViewDetail(row)}
+            onClick={() => crud.handleViewDetail(row)}
             className="p-1.5 text-primary-600 hover:bg-primary-50 rounded transition-colors"
             title="查看详情"
           >
@@ -321,7 +255,7 @@ export default function DriversPage() {
             <Edit2 className="w-4 h-4" />
           </button>
           <button
-            onClick={() => handleDelete(row)}
+            onClick={() => crud.handleDelete(row)}
             className="p-1.5 text-danger-600 hover:bg-danger-50 rounded transition-colors"
             title="删除"
           >
@@ -345,159 +279,95 @@ export default function DriversPage() {
         </button>
       </div>
 
-      <div className="card p-4">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="relative flex-1 min-w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
-            <input
-              type="text"
-              placeholder="搜索姓名、电话、驾照编号..."
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-neutral-500" />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
-            >
-              <option value="all">全部状态</option>
-              {Object.entries(DRIVER_STATUS).map(([key, val]) => (
-                <option key={key} value={key}>
-                  {val.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-3">
-            {Object.entries(DRIVER_STATUS).map(([key, val]) => (
-              <div key={key} className="flex items-center gap-1 text-sm">
-                <span
-                  className={classNames(
-                    'w-2.5 h-2.5 rounded-full',
-                    val.color === 'success' && 'bg-success-500',
-                    val.color === 'warning' && 'bg-warning-500',
-                    val.color === 'danger' && 'bg-danger-500',
-                    val.color === 'neutral' && 'bg-neutral-500',
-                    val.color === 'primary' && 'bg-primary-500'
-                  )}
-                />
-                <span className="text-neutral-600">{val.label}</span>
-                <span className="text-neutral-500 font-medium">
-                  ({drivers.filter((d) => d.status === key).length})
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      <SearchFilterBar
+        searchText={crud.searchText}
+        onSearchChange={crud.setSearchText}
+        searchPlaceholder="搜索姓名、电话、驾照编号..."
+        filterValue={crud.statusFilter}
+        onFilterChange={crud.setStatusFilter}
+        filterOptions={filterOptions}
+        filterLabel="全部状态"
+      >
+        <StatusCountBar items={statusCountItems} />
+      </SearchFilterBar>
 
       <DataTable
         columns={columns}
         data={pagedDrivers}
         loading={loading}
         pagination={{
-          page,
-          pageSize,
+          page: crud.page,
+          pageSize: crud.pageSize,
           total: filteredDrivers.length,
-          onPageChange: setPage,
+          onPageChange: crud.setPage,
         }}
       />
 
-      {showDetailModal && selectedDriver && (
+      {crud.showDetailModal && crud.selectedItem && (
         <Modal
-          open={showDetailModal}
-          onClose={() => setShowDetailModal(false)}
+          open={crud.showDetailModal}
+          onClose={crud.closeDetailModal}
           title="驾驶员详情"
           size="lg"
         >
           <div className="space-y-6">
             <div className="flex items-start gap-6">
               <div className="w-24 h-24 rounded-xl bg-primary-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-                {selectedDriver.avatar ? (
+                {(crud.selectedItem as Driver).avatar ? (
                   <img
-                    src={selectedDriver.avatar}
-                    alt={selectedDriver.name}
+                    src={(crud.selectedItem as Driver).avatar}
+                    alt={(crud.selectedItem as Driver).name}
                     className="w-full h-full object-cover"
                   />
                 ) : (
                   <span className="text-3xl text-primary-600 font-bold">
-                    {selectedDriver.name.charAt(0)}
+                    {(crud.selectedItem as Driver).name.charAt(0)}
                   </span>
                 )}
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-3">
-                  <h3 className="text-xl font-bold text-neutral-800">{selectedDriver.name}</h3>
-                  {getStatusBadge(selectedDriver.status)}
+                  <h3 className="text-xl font-bold text-neutral-800">{(crud.selectedItem as Driver).name}</h3>
+                  {getStatusBadge((crud.selectedItem as Driver).status)}
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-neutral-500">联系电话：</span>
-                    <span className="font-medium text-neutral-800">{selectedDriver.phone}</span>
-                  </div>
-                  <div>
-                    <span className="text-neutral-500">身份证号：</span>
-                    <span className="font-medium text-neutral-800">{selectedDriver.idCard}</span>
-                  </div>
-                  <div>
-                    <span className="text-neutral-500">入职日期：</span>
-                    <span className="font-medium text-neutral-800">
-                      {formatDate(selectedDriver.hireDate)}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-neutral-500">驾龄：</span>
-                    <span className="font-medium text-neutral-800">{selectedDriver.drivingYears}年</span>
-                  </div>
+                  <DetailItem label="联系电话">{(crud.selectedItem as Driver).phone}</DetailItem>
+                  <DetailItem label="身份证号">{(crud.selectedItem as Driver).idCard}</DetailItem>
+                  <DetailItem label="入职日期">{formatDate((crud.selectedItem as Driver).hireDate)}</DetailItem>
+                  <DetailItem label="驾龄">{(crud.selectedItem as Driver).drivingYears}年</DetailItem>
                 </div>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-4">
-                <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                  <div className="w-1 h-5 bg-primary-500 rounded-full" />
-                  驾驶资质
-                </h3>
+                <SectionHeader title="驾驶资质" color="primary" />
                 <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-neutral-500">驾照类型：</span>
-                    <span className="font-medium text-neutral-800">{selectedDriver.licenseType}</span>
-                  </div>
-                  <div>
-                    <span className="text-neutral-500">驾照编号：</span>
-                    <span className="font-medium text-neutral-800">{selectedDriver.licenseNumber}</span>
-                  </div>
+                  <DetailItem label="驾照类型">{(crud.selectedItem as Driver).licenseType}</DetailItem>
+                  <DetailItem label="驾照编号">{(crud.selectedItem as Driver).licenseNumber}</DetailItem>
                   <div className="col-span-2">
                     <div className="flex items-center justify-between">
                       <span className="text-neutral-500">驾照有效期</span>
                       <div className="text-right">
                         <span className="font-medium text-neutral-800">
-                          {formatDate(selectedDriver.licenseExpiry)}
+                          {formatDate((crud.selectedItem as Driver).licenseExpiry)}
                         </span>
                         <div className="mt-1">
                           {(() => {
-                            const status = getLicenseExpiryStatus(selectedDriver.licenseExpiry);
+                            const status = getExpiryStatus((crud.selectedItem as Driver).licenseExpiry, 90);
                             return <StatusBadge variant={status.variant}>{status.text}</StatusBadge>;
                           })()}
                         </div>
                       </div>
                     </div>
                   </div>
-                  <div>
-                    <span className="text-neutral-500">从业资格证：</span>
-                    <span className="font-medium text-neutral-800">{selectedDriver.qualificationCert}</span>
-                  </div>
+                  <DetailItem label="从业资格证">{(crud.selectedItem as Driver).qualificationCert}</DetailItem>
                   <div className="col-span-2">
                     <div className="flex items-center justify-between">
                       <span className="text-neutral-500">从业资格证有效期</span>
                       <div className="text-right">
                         <span className="font-medium text-neutral-800">
-                          {formatDate(selectedDriver.qualificationExpiry)}
+                          {formatDate((crud.selectedItem as Driver).qualificationExpiry)}
                         </span>
                       </div>
                     </div>
@@ -505,145 +375,58 @@ export default function DriversPage() {
                 </div>
               </div>
               <div className="space-y-4">
-                <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                  <div className="w-1 h-5 bg-warning-500 rounded-full" />
-                  安全记录
-                </h3>
+                <SectionHeader title="安全记录" color="warning" />
                 <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-neutral-500">累计安全行驶：</span>
-                    <span className="font-medium text-neutral-800">{selectedDriver.accidentCount === 0 ? '无事故' : `${selectedDriver.accidentCount}次事故`}</span>
-                  </div>
-                  <div>
-                    <span className="text-neutral-500">累计违章次数：</span>
-                    <span className="font-medium text-neutral-800">{selectedDriver.violationCount}次</span>
-                  </div>
-                  <div>
-                    <span className="text-neutral-500">安全培训记录：</span>
-                    <span className="font-medium text-neutral-800">{selectedDriver.trainingRecords.length}次</span>
-                  </div>
-                  <div>
-                    <span className="text-neutral-500">体检有效期至：</span>
-                    <span className="font-medium text-neutral-800">
-                      {formatDate(selectedDriver.physicalExpiry)}
-                    </span>
-                  </div>
+                  <DetailItem label="累计安全行驶">{(crud.selectedItem as Driver).accidentCount === 0 ? '无事故' : `${(crud.selectedItem as Driver).accidentCount}次事故`}</DetailItem>
+                  <DetailItem label="累计违章次数">{(crud.selectedItem as Driver).violationCount}次</DetailItem>
+                  <DetailItem label="安全培训记录">{(crud.selectedItem as Driver).trainingRecords.length}次</DetailItem>
+                  <DetailItem label="体检有效期至">{formatDate((crud.selectedItem as Driver).physicalExpiry)}</DetailItem>
                 </div>
               </div>
             </div>
 
             <div className="space-y-4">
-              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                <div className="w-1 h-5 bg-success-500 rounded-full" />
-                紧急联系人
-              </h3>
+              <SectionHeader title="紧急联系人" color="success" />
               <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-neutral-500">紧急联系人：</span>
-                  <span className="font-medium text-neutral-800">{selectedDriver.emergencyContact.name}</span>
-                </div>
-                <div>
-                  <span className="text-neutral-500">联系电话：</span>
-                  <span className="font-medium text-neutral-800">{selectedDriver.emergencyContact.phone}</span>
-                </div>
-                <div>
-                  <span className="text-neutral-500">与本人关系：</span>
-                  <span className="font-medium text-neutral-800">{selectedDriver.emergencyContact.relationship}</span>
-                </div>
+                <DetailItem label="紧急联系人">{(crud.selectedItem as Driver).emergencyContact.name}</DetailItem>
+                <DetailItem label="联系电话">{(crud.selectedItem as Driver).emergencyContact.phone}</DetailItem>
+                <DetailItem label="与本人关系">{(crud.selectedItem as Driver).emergencyContact.relationship}</DetailItem>
               </div>
             </div>
           </div>
         </Modal>
       )}
 
-      {showDeleteConfirm && selectedDriver && (
-        <Modal
-          open={showDeleteConfirm}
-          onClose={() => setShowDeleteConfirm(false)}
-          title="确认删除"
-          size="sm"
-          footer={
-            <>
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="btn btn-default"
-              >
-                取消
-              </button>
-              <button onClick={confirmDelete} className="btn btn-danger">
-                确认删除
-              </button>
-            </>
-          }
-        >
-          <div className="text-center py-4">
-            <div className="w-16 h-16 mx-auto bg-danger-100 rounded-full flex items-center justify-center mb-4">
-              <Trash2 className="w-8 h-8 text-danger-500" />
-            </div>
-            <p className="text-lg font-medium text-neutral-800">
-              确定要删除驾驶员 {selectedDriver.name} 吗？
-            </p>
-            <p className="text-sm text-neutral-500 mt-2">此操作不可撤销，相关数据将被永久删除</p>
-          </div>
-        </Modal>
-      )}
+      <DeleteConfirmModal
+        open={crud.showDeleteConfirm}
+        onClose={crud.closeDeleteConfirm}
+        onConfirm={crud.confirmDelete}
+        itemName={(crud.deleteTarget as Driver)?.name || ''}
+        itemType="驾驶员"
+      />
 
-      {showFormModal && (
+      {crud.showFormModal && (
         <Modal
-          open={showFormModal}
-          onClose={() => setShowFormModal(false)}
-          title={isEditing ? '编辑驾驶员' : '新增驾驶员'}
+          open={crud.showFormModal}
+          onClose={crud.closeFormModal}
+          title={crud.isEditing ? '编辑驾驶员' : '新增驾驶员'}
           size="xl"
-          footer={
-            <>
-              <button
-                onClick={() => setShowFormModal(false)}
-                className="btn btn-default"
-                disabled={formLoading}
-              >
-                <X className="w-4 h-4" />
-                取消
-              </button>
-              <button
-                onClick={handleSubmit}
-                className="btn btn-primary"
-                disabled={formLoading}
-              >
-                <Save className="w-4 h-4" />
-                {formLoading ? '保存中...' : '保存'}
-              </button>
-            </>
-          }
+          footer={<FormModalFooter onCancel={crud.closeFormModal} onSubmit={handleSubmit} loading={crud.formLoading} />}
         >
           <div className="space-y-6">
             <div className="space-y-4">
-              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                <div className="w-1 h-5 bg-primary-500 rounded-full" />
-                基本信息
-              </h3>
+              <SectionHeader title="基本信息" color="primary" />
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    姓名 <span className="text-danger-500">*</span>
-                  </label>
-                  <input
+                <FormField label="姓名" required error={crud.formErrors.name}>
+                  <FormInput
                     type="text"
                     value={formData.name}
                     onChange={(e) => handleFormChange('name', e.target.value)}
                     placeholder="请输入姓名"
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.name ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.name}
                   />
-                  {formErrors.name && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.name}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    性别
-                  </label>
+                </FormField>
+                <FormField label="性别">
                   <div className="flex items-center gap-4 py-2">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
@@ -666,252 +449,140 @@ export default function DriversPage() {
                       <span className="text-sm text-neutral-700">女</span>
                     </label>
                   </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    联系电话 <span className="text-danger-500">*</span>
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="联系电话" required error={crud.formErrors.phone}>
+                  <FormInput
                     type="text"
                     value={formData.phone}
                     onChange={(e) => handleFormChange('phone', e.target.value)}
                     placeholder="请输入联系电话"
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.phone ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.phone}
                   />
-                  {formErrors.phone && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.phone}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    身份证号 <span className="text-danger-500">*</span>
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="身份证号" required error={crud.formErrors.idCard}>
+                  <FormInput
                     type="text"
                     value={formData.idCard}
                     onChange={(e) => handleFormChange('idCard', e.target.value)}
                     placeholder="请输入身份证号"
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.idCard ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.idCard}
                   />
-                  {formErrors.idCard && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.idCard}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    入职日期 <span className="text-danger-500">*</span>
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="入职日期" required error={crud.formErrors.hireDate}>
+                  <FormInput
                     type="date"
                     value={formData.hireDate}
                     onChange={(e) => handleFormChange('hireDate', e.target.value)}
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.hireDate ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.hireDate}
                   />
-                  {formErrors.hireDate && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.hireDate}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    驾龄(年)
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="驾龄(年)" error={crud.formErrors.drivingYears}>
+                  <FormInput
                     type="number"
                     value={formData.drivingYears}
                     onChange={(e) => handleFormChange('drivingYears', Number(e.target.value))}
                     placeholder="请输入驾龄"
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.drivingYears ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.drivingYears}
                   />
-                  {formErrors.drivingYears && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.drivingYears}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    状态
-                  </label>
-                  <select
+                </FormField>
+                <FormField label="状态">
+                  <FormSelect
                     value={formData.status}
                     onChange={(e) => handleFormChange('status', e.target.value)}
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
-                  >
-                    {Object.entries(DRIVER_STATUS).map(([key, val]) => (
-                      <option key={key} value={key}>
-                        {val.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    options={Object.entries(DRIVER_STATUS).map(([key, val]) => ({ value: key, label: val.label }))}
+                  />
+                </FormField>
               </div>
             </div>
 
             <div className="space-y-4">
-              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                <div className="w-1 h-5 bg-warning-500 rounded-full" />
-                驾驶资质
-              </h3>
+              <SectionHeader title="驾驶资质" color="warning" />
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    驾驶证类型 <span className="text-danger-500">*</span>
-                  </label>
-                  <select
+                <FormField label="驾驶证类型" required error={crud.formErrors.licenseType}>
+                  <FormSelect
                     value={formData.licenseType}
                     onChange={(e) => handleFormChange('licenseType', e.target.value)}
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white',
-                      formErrors.licenseType ? 'border-danger-400' : 'border-neutral-300'
-                    )}
-                  >
-                    {LICENSE_TYPES.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                  </select>
-                  {formErrors.licenseType && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.licenseType}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    驾驶证编号 <span className="text-danger-500">*</span>
-                  </label>
-                  <input
+                    options={LICENSE_TYPES.map((type) => ({ value: type, label: type }))}
+                    error={crud.formErrors.licenseType}
+                  />
+                </FormField>
+                <FormField label="驾驶证编号" required error={crud.formErrors.licenseNumber}>
+                  <FormInput
                     type="text"
                     value={formData.licenseNumber}
                     onChange={(e) => handleFormChange('licenseNumber', e.target.value)}
                     placeholder="请输入驾驶证编号"
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.licenseNumber ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.licenseNumber}
                   />
-                  {formErrors.licenseNumber && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.licenseNumber}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    驾驶证有效期 <span className="text-danger-500">*</span>
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="驾驶证有效期" required error={crud.formErrors.licenseExpiry}>
+                  <FormInput
                     type="date"
                     value={formData.licenseExpiry}
                     onChange={(e) => handleFormChange('licenseExpiry', e.target.value)}
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.licenseExpiry ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.licenseExpiry}
                   />
-                  {formErrors.licenseExpiry && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.licenseExpiry}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    从业资格证号
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="从业资格证号">
+                  <FormInput
                     type="text"
                     value={formData.qualificationCert}
                     onChange={(e) => handleFormChange('qualificationCert', e.target.value)}
                     placeholder="请输入从业资格证号"
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    从业资格证有效期
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="从业资格证有效期">
+                  <FormInput
                     type="date"
                     value={formData.qualificationExpiry}
                     onChange={(e) => handleFormChange('qualificationExpiry', e.target.value)}
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    体检有效期
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="体检有效期">
+                  <FormInput
                     type="date"
                     value={formData.physicalExpiry}
                     onChange={(e) => handleFormChange('physicalExpiry', e.target.value)}
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                   />
-                </div>
+                </FormField>
               </div>
             </div>
 
             <div className="space-y-4">
-              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                <div className="w-1 h-5 bg-success-500 rounded-full" />
-                紧急联系人
-              </h3>
+              <SectionHeader title="紧急联系人" color="success" />
               <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    姓名
-                  </label>
-                  <input
+                <FormField label="姓名">
+                  <FormInput
                     type="text"
                     value={formData.emergencyContact.name}
                     onChange={(e) => handleEmergencyContactChange('name', e.target.value)}
                     placeholder="请输入紧急联系人姓名"
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    联系电话
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="联系电话" error={crud.formErrors.emergencyPhone}>
+                  <FormInput
                     type="text"
                     value={formData.emergencyContact.phone}
                     onChange={(e) => handleEmergencyContactChange('phone', e.target.value)}
                     placeholder="请输入联系电话"
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.emergencyPhone ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.emergencyPhone}
                   />
-                  {formErrors.emergencyPhone && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.emergencyPhone}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    关系
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="关系">
+                  <FormInput
                     type="text"
                     value={formData.emergencyContact.relationship}
                     onChange={(e) => handleEmergencyContactChange('relationship', e.target.value)}
                     placeholder="如：配偶、父母"
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                   />
-                </div>
+                </FormField>
               </div>
             </div>
           </div>
         </Modal>
       )}
 
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
+      <ToastContainer toasts={crud.toasts} onRemove={crud.removeToast} />
     </div>
   );
 }

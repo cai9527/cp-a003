@@ -1,13 +1,19 @@
 import { useState } from 'react';
-import { Plus, Search, Filter, Edit2, Trash2, Eye, MapPin, Clock, Truck, Save, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Eye, MapPin, Clock, Truck } from 'lucide-react';
 import { useTaskStore } from '@/store/useTaskStore';
 import { useVehicleStore } from '@/store/useVehicleStore';
 import { useDriverStore } from '@/store/useDriverStore';
 import DataTable from '@/components/UI/DataTable';
 import StatusBadge from '@/components/UI/StatusBadge';
 import Modal from '@/components/UI/Modal';
+import SearchFilterBar from '@/components/UI/SearchFilterBar';
+import DeleteConfirmModal from '@/components/UI/DeleteConfirmModal';
+import FormField, { FormInput, FormSelect } from '@/components/UI/FormField';
+import SectionHeader from '@/components/UI/SectionHeader';
+import DetailItem from '@/components/UI/DetailItem';
+import FormModalFooter from '@/components/UI/FormModalFooter';
 import { ToastContainer } from '@/components/UI/Toast';
-import { useToast } from '@/hooks/useToast';
+import { useCrudPage } from '@/hooks/useCrudPage';
 import { TASK_STATUS, MATERIAL_TYPES } from '@/types';
 import { formatDate, formatDateTime, formatWeight, classNames } from '@/utils';
 import type { TransportTask } from '@/types';
@@ -16,20 +22,9 @@ export default function TasksPage() {
   const { tasks, loading, deleteTask, addTask, updateTask } = useTaskStore();
   const { vehicles } = useVehicleStore();
   const { drivers } = useDriverStore();
-  const [searchText, setSearchText] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [page, setPage] = useState(1);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<TransportTask | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showFormModal, setShowFormModal] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [formLoading, setFormLoading] = useState(false);
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const { toasts, removeToast, success, error } = useToast();
-  const pageSize = 10;
 
   const defaultFormData = {
+    id: '',
     taskNo: '',
     name: '',
     vehicleId: '',
@@ -56,41 +51,36 @@ export default function TasksPage() {
       distance: 10,
       estimatedTime: 60,
     },
-    transportRecords: [],
+    transportRecords: [] as TransportTask['transportRecords'],
+    createdAt: '',
   };
 
-  const [formData, setFormData] = useState(defaultFormData);
-
-  const filteredTasks = tasks.filter((t) => {
-    const matchSearch =
-      t.taskNo.includes(searchText) ||
-      t.vehiclePlate.includes(searchText) ||
-      t.driverName.includes(searchText) ||
-      t.material.includes(searchText);
-    const matchStatus = statusFilter === 'all' || t.status === statusFilter;
-    return matchSearch && matchStatus;
+  const crud = useCrudPage<any>({
+    defaultFormData,
+    onAdd: async (data) => { await addTask(data); },
+    onUpdate: async (id, data) => { await updateTask(id, data); },
+    onDelete: (id) => deleteTask(id),
+    addSuccessMessage: '任务创建成功',
+    updateSuccessMessage: '任务信息更新成功',
+    deleteSuccessMessage: '任务删除成功',
+    validateForm: (data) => {
+      const errors: Record<string, string> = {};
+      if (!data.taskNo.trim()) errors.taskNo = '请输入任务编号';
+      if (!data.name.trim()) errors.name = '请输入任务名称';
+      if (!data.vehicleId) errors.vehicleId = '请选择运输车辆';
+      if (!data.driverId) errors.driverId = '请选择驾驶员';
+      if (!data.material) errors.material = '请选择运输物料';
+      if (!data.plannedTrips || data.plannedTrips <= 0) errors.plannedTrips = '请输入有效的计划趟数';
+      if (!data.plannedQuantity || data.plannedQuantity <= 0) errors.plannedQuantity = '请输入有效的计划方量';
+      if (!data.distance || data.distance <= 0) errors.distance = '请输入有效的运输距离';
+      if (!data.fromLocation.trim()) errors.fromLocation = '请输入装料地点';
+      if (!data.toLocation.trim()) errors.toLocation = '请输入卸料地点';
+      if (!data.scheduledDate) errors.scheduledDate = '请选择计划日期';
+      return errors;
+    },
   });
 
-  const pagedTasks = filteredTasks.slice((page - 1) * pageSize, page * pageSize);
-
-  const handleViewDetail = (task: TransportTask) => {
-    setSelectedTask(task);
-    setShowDetailModal(true);
-  };
-
-  const handleDelete = (task: TransportTask) => {
-    setSelectedTask(task);
-    setShowDeleteConfirm(true);
-  };
-
-  const confirmDelete = () => {
-    if (selectedTask) {
-      deleteTask(selectedTask.id);
-      setShowDeleteConfirm(false);
-      setSelectedTask(null);
-      success('任务删除成功');
-    }
-  };
+  const [formData, setFormData] = useState(defaultFormData);
 
   const generateTaskNo = () => {
     const date = new Date();
@@ -100,15 +90,11 @@ export default function TasksPage() {
   };
 
   const handleAdd = () => {
-    setIsEditing(false);
+    crud.handleAdd();
     setFormData({ ...defaultFormData, taskNo: generateTaskNo() });
-    setFormErrors({});
-    setShowFormModal(true);
   };
 
   const handleEdit = (task: TransportTask) => {
-    setIsEditing(true);
-    setSelectedTask(task);
     setFormData({
       taskNo: task.taskNo,
       name: task.name,
@@ -130,9 +116,30 @@ export default function TasksPage() {
       status: task.status,
       route: task.route,
       transportRecords: task.transportRecords,
+      id: task.id,
+      createdAt: task.createdAt,
     });
-    setFormErrors({});
-    setShowFormModal(true);
+    crud.handleEdit(task);
+  };
+
+  const handleFormChange = (field: string, value: any) => {
+    setFormData((prev) => {
+      const updated = { ...prev, [field]: value };
+      if (field === 'material') {
+        updated.materialType = value;
+      }
+      if (field === 'plannedTrips') {
+        updated.plannedLoads = value;
+      }
+      return updated;
+    });
+    if (crud.formErrors[field]) {
+      crud.setFormErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
   };
 
   const handleVehicleChange = (vehicleId: string) => {
@@ -155,99 +162,21 @@ export default function TasksPage() {
     }
   };
 
-  const validateForm = (): boolean => {
-    const errors: Record<string, string> = {};
-
-    if (!formData.taskNo.trim()) {
-      errors.taskNo = '请输入任务编号';
-    }
-
-    if (!formData.name.trim()) {
-      errors.name = '请输入任务名称';
-    }
-
-    if (!formData.vehicleId) {
-      errors.vehicleId = '请选择运输车辆';
-    }
-
-    if (!formData.driverId) {
-      errors.driverId = '请选择驾驶员';
-    }
-
-    if (!formData.material) {
-      errors.material = '请选择运输物料';
-    }
-
-    if (!formData.plannedTrips || formData.plannedTrips <= 0) {
-      errors.plannedTrips = '请输入有效的计划趟数';
-    }
-
-    if (!formData.plannedQuantity || formData.plannedQuantity <= 0) {
-      errors.plannedQuantity = '请输入有效的计划方量';
-    }
-
-    if (!formData.distance || formData.distance <= 0) {
-      errors.distance = '请输入有效的运输距离';
-    }
-
-    if (!formData.fromLocation.trim()) {
-      errors.fromLocation = '请输入装料地点';
-    }
-
-    if (!formData.toLocation.trim()) {
-      errors.toLocation = '请输入卸料地点';
-    }
-
-    if (!formData.scheduledDate) {
-      errors.scheduledDate = '请选择计划日期';
-    }
-
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+  const handleSubmit = () => {
+    crud.handleSubmit(formData);
   };
 
-  const handleSubmit = async () => {
-    if (!validateForm()) {
-      error('请检查表单填写是否正确');
-      return;
-    }
+  const filteredTasks = tasks.filter((t) => {
+    const matchSearch =
+      t.taskNo.includes(crud.searchText) ||
+      t.vehiclePlate.includes(crud.searchText) ||
+      t.driverName.includes(crud.searchText) ||
+      t.material.includes(crud.searchText);
+    const matchStatus = crud.statusFilter === 'all' || t.status === crud.statusFilter;
+    return matchSearch && matchStatus;
+  });
 
-    setFormLoading(true);
-    try {
-      if (isEditing && selectedTask) {
-        await updateTask(selectedTask.id, formData);
-        success('任务信息更新成功');
-      } else {
-        await addTask(formData);
-        success('任务创建成功');
-      }
-      setShowFormModal(false);
-    } catch (err) {
-      error('操作失败，请重试');
-    } finally {
-      setFormLoading(false);
-    }
-  };
-
-  const handleFormChange = (field: string, value: any) => {
-    setFormData((prev) => {
-      const updated = { ...prev, [field]: value };
-      if (field === 'material') {
-        updated.materialType = value;
-      }
-      if (field === 'plannedTrips') {
-        updated.plannedLoads = value;
-      }
-      return updated;
-    });
-    if (formErrors[field]) {
-      setFormErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[field];
-        return newErrors;
-      });
-    }
-  };
+  const pagedTasks = filteredTasks.slice((crud.page - 1) * crud.pageSize, crud.page * crud.pageSize);
 
   const getStatusBadge = (status: TransportTask['status']) => {
     const config = TASK_STATUS[status];
@@ -365,7 +294,7 @@ export default function TasksPage() {
       render: (row: TransportTask) => (
         <div className="flex items-center gap-1">
           <button
-            onClick={() => handleViewDetail(row)}
+            onClick={() => crud.handleViewDetail(row)}
             className="p-1.5 text-primary-600 hover:bg-primary-50 rounded transition-colors"
             title="查看详情"
           >
@@ -379,7 +308,7 @@ export default function TasksPage() {
             <Edit2 className="w-4 h-4" />
           </button>
           <button
-            onClick={() => handleDelete(row)}
+            onClick={() => crud.handleDelete(row)}
             className="p-1.5 text-danger-600 hover:bg-danger-50 rounded transition-colors"
             title="删除"
           >
@@ -432,132 +361,70 @@ export default function TasksPage() {
         })}
       </div>
 
-      <div className="card p-4">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="relative flex-1 min-w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
-            <input
-              type="text"
-              placeholder="搜索任务编号、车牌号、驾驶员、物料..."
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-neutral-500" />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
-            >
-              <option value="all">全部状态</option>
-              {Object.entries(TASK_STATUS).map(([key, val]) => (
-                <option key={key} value={key}>
-                  {val.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
+      <SearchFilterBar
+        searchText={crud.searchText}
+        onSearchChange={crud.setSearchText}
+        searchPlaceholder="搜索任务编号、车牌号、驾驶员、物料..."
+        filterValue={crud.statusFilter}
+        onFilterChange={crud.setStatusFilter}
+        filterOptions={Object.entries(TASK_STATUS).map(([key, val]) => ({ value: key, label: val.label }))}
+        filterLabel="全部状态"
+      />
 
       <DataTable
         columns={columns}
         data={pagedTasks}
         loading={loading}
         pagination={{
-          page,
-          pageSize,
+          page: crud.page,
+          pageSize: crud.pageSize,
           total: filteredTasks.length,
-          onPageChange: setPage,
+          onPageChange: crud.setPage,
         }}
       />
 
-      {showDetailModal && selectedTask && (
+      {crud.showDetailModal && crud.selectedItem && (
         <Modal
-          open={showDetailModal}
-          onClose={() => setShowDetailModal(false)}
+          open={crud.showDetailModal}
+          onClose={crud.closeDetailModal}
           title="任务详情"
           size="xl"
         >
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-xl font-bold text-neutral-800">{selectedTask.taskNo}</h3>
+                <h3 className="text-xl font-bold text-neutral-800">{crud.selectedItem.taskNo}</h3>
                 <p className="text-sm text-neutral-500 mt-1">
-                  创建于 {formatDateTime(selectedTask.createdAt)}
+                  创建于 {formatDateTime(crud.selectedItem.createdAt)}
                 </p>
               </div>
-              {getStatusBadge(selectedTask.status)}
+              {getStatusBadge(crud.selectedItem.status)}
             </div>
 
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-4">
-                <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                  <div className="w-1 h-5 bg-primary-500 rounded-full" />
-                  基本信息
-                </h3>
+                <SectionHeader title="基本信息" />
                 <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-neutral-500">运输物料：</span>
-                    <span className="font-medium text-neutral-800">{selectedTask.material}</span>
-                  </div>
-                  <div>
-                    <span className="text-neutral-500">计划日期：</span>
-                    <span className="font-medium text-neutral-800">
-                      {formatDate(selectedTask.scheduledDate)}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-neutral-500">计划趟数：</span>
-                    <span className="font-medium text-neutral-800">{selectedTask.plannedTrips}趟</span>
-                  </div>
-                  <div>
-                    <span className="text-neutral-500">实际趟数：</span>
-                    <span className="font-medium text-neutral-800">{selectedTask.actualTrips}趟</span>
-                  </div>
-                  <div>
-                    <span className="text-neutral-500">计划方量：</span>
-                    <span className="font-medium text-neutral-800">
-                      {formatWeight(selectedTask.plannedQuantity)}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-neutral-500">实际方量：</span>
-                    <span className="font-medium text-neutral-800">
-                      {formatWeight(selectedTask.actualQuantity)}
-                    </span>
-                  </div>
+                  <DetailItem label="运输物料">{crud.selectedItem.material}</DetailItem>
+                  <DetailItem label="计划日期">{formatDate(crud.selectedItem.scheduledDate)}</DetailItem>
+                  <DetailItem label="计划趟数">{crud.selectedItem.plannedTrips}趟</DetailItem>
+                  <DetailItem label="实际趟数">{crud.selectedItem.actualTrips}趟</DetailItem>
+                  <DetailItem label="计划方量">{formatWeight(crud.selectedItem.plannedQuantity)}</DetailItem>
+                  <DetailItem label="实际方量">{formatWeight(crud.selectedItem.actualQuantity)}</DetailItem>
                 </div>
               </div>
               <div className="space-y-4">
-                <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                  <div className="w-1 h-5 bg-warning-500 rounded-full" />
-                  运输资源
-                </h3>
+                <SectionHeader title="运输资源" color="warning" />
                 <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-neutral-500">车辆：</span>
-                    <span className="font-medium text-neutral-800">{selectedTask.vehiclePlate}</span>
-                  </div>
-                  <div>
-                    <span className="text-neutral-500">驾驶员：</span>
-                    <span className="font-medium text-neutral-800">{selectedTask.driverName}</span>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-neutral-500">预计运输距离：</span>
-                    <span className="font-medium text-neutral-800">{selectedTask.distance}公里</span>
-                  </div>
+                  <DetailItem label="车辆">{crud.selectedItem.vehiclePlate}</DetailItem>
+                  <DetailItem label="驾驶员">{crud.selectedItem.driverName}</DetailItem>
+                  <DetailItem label="预计运输距离" className="col-span-2">{crud.selectedItem.distance}公里</DetailItem>
                 </div>
               </div>
             </div>
 
             <div className="space-y-4">
-              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                <div className="w-1 h-5 bg-success-500 rounded-full" />
-                运输路线
-              </h3>
+              <SectionHeader title="运输路线" color="success" />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="card p-4">
                   <div className="flex items-center gap-2 mb-2">
@@ -566,11 +433,11 @@ export default function TasksPage() {
                     </div>
                     <span className="text-sm font-medium text-neutral-600">装料点</span>
                   </div>
-                  <p className="text-neutral-800">{selectedTask.fromLocation}</p>
+                  <p className="text-neutral-800">{crud.selectedItem.fromLocation}</p>
                 </div>
                 <div className="card p-4 flex items-center justify-center">
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-primary-600">{selectedTask.distance}</div>
+                    <div className="text-2xl font-bold text-primary-600">{crud.selectedItem.distance}</div>
                     <div className="text-xs text-neutral-500">公里</div>
                   </div>
                 </div>
@@ -581,16 +448,13 @@ export default function TasksPage() {
                     </div>
                     <span className="text-sm font-medium text-neutral-600">卸料点</span>
                   </div>
-                  <p className="text-neutral-800">{selectedTask.toLocation}</p>
+                  <p className="text-neutral-800">{crud.selectedItem.toLocation}</p>
                 </div>
               </div>
             </div>
 
             <div className="space-y-4">
-              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                <div className="w-1 h-5 bg-primary-500 rounded-full" />
-                运输记录
-              </h3>
+              <SectionHeader title="运输记录" />
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -605,7 +469,7 @@ export default function TasksPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedTask.transportRecords.map((record, index) => (
+                    {crud.selectedItem.transportRecords.map((record, index) => (
                       <tr key={record.id} className="border-b border-neutral-100">
                         <td className="py-3">{index + 1}</td>
                         <td className="py-3">{formatDateTime(record.loadTime)}</td>
@@ -628,330 +492,163 @@ export default function TasksPage() {
         </Modal>
       )}
 
-      {showDeleteConfirm && selectedTask && (
-        <Modal
-          open={showDeleteConfirm}
-          onClose={() => setShowDeleteConfirm(false)}
-          title="确认删除"
-          size="sm"
-          footer={
-            <>
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="btn btn-default"
-              >
-                取消
-              </button>
-              <button onClick={confirmDelete} className="btn btn-danger">
-                确认删除
-              </button>
-            </>
-          }
-        >
-          <div className="text-center py-4">
-            <div className="w-16 h-16 mx-auto bg-danger-100 rounded-full flex items-center justify-center mb-4">
-              <Trash2 className="w-8 h-8 text-danger-500" />
-            </div>
-            <p className="text-lg font-medium text-neutral-800">
-              确定要删除任务 {selectedTask.taskNo} 吗？
-            </p>
-            <p className="text-sm text-neutral-500 mt-2">此操作不可撤销，相关数据将被永久删除</p>
-          </div>
-        </Modal>
-      )}
+      <DeleteConfirmModal
+        open={crud.showDeleteConfirm}
+        onClose={crud.closeDeleteConfirm}
+        onConfirm={crud.confirmDelete}
+        itemName={crud.deleteTarget?.taskNo || ''}
+        itemType="任务"
+      />
 
-      {showFormModal && (
+      {crud.showFormModal && (
         <Modal
-          open={showFormModal}
-          onClose={() => setShowFormModal(false)}
-          title={isEditing ? '编辑任务' : '新增任务'}
+          open={crud.showFormModal}
+          onClose={crud.closeFormModal}
+          title={crud.isEditing ? '编辑任务' : '新增任务'}
           size="xl"
           footer={
-            <>
-              <button
-                onClick={() => setShowFormModal(false)}
-                className="btn btn-default"
-                disabled={formLoading}
-              >
-                <X className="w-4 h-4" />
-                取消
-              </button>
-              <button
-                onClick={handleSubmit}
-                className="btn btn-primary"
-                disabled={formLoading}
-              >
-                <Save className="w-4 h-4" />
-                {formLoading ? '保存中...' : '保存'}
-              </button>
-            </>
+            <FormModalFooter
+              onCancel={crud.closeFormModal}
+              onSubmit={handleSubmit}
+              loading={crud.formLoading}
+            />
           }
         >
           <div className="space-y-6">
             <div className="space-y-4">
-              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                <div className="w-1 h-5 bg-primary-500 rounded-full" />
-                基本信息
-              </h3>
+              <SectionHeader title="基本信息" />
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    任务编号 <span className="text-danger-500">*</span>
-                  </label>
-                  <input
+                <FormField label="任务编号" required error={crud.formErrors.taskNo}>
+                  <FormInput
                     type="text"
                     value={formData.taskNo}
                     onChange={(e) => handleFormChange('taskNo', e.target.value)}
                     placeholder="请输入任务编号"
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.taskNo ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.taskNo}
                   />
-                  {formErrors.taskNo && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.taskNo}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    任务名称 <span className="text-danger-500">*</span>
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="任务名称" required error={crud.formErrors.name}>
+                  <FormInput
                     type="text"
                     value={formData.name}
                     onChange={(e) => handleFormChange('name', e.target.value)}
                     placeholder="请输入任务名称"
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.name ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.name}
                   />
-                  {formErrors.name && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.name}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    运输物料 <span className="text-danger-500">*</span>
-                  </label>
-                  <select
+                </FormField>
+                <FormField label="运输物料" required error={crud.formErrors.material}>
+                  <FormSelect
                     value={formData.material}
                     onChange={(e) => handleFormChange('material', e.target.value)}
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded rounded-lg bg-white',
-                      formErrors.material ? 'border-danger-400' : 'border-neutral-300'
-                    )}
-                  >
-                    {MATERIAL_TYPES.map((material) => (
-                      <option key={material} value={material}>
-                        {material}
-                      </option>
-                    ))}
-                  </select>
-                  {formErrors.material && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.material}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    计划日期 <span className="text-danger-500">*</span>
-                  </label>
-                  <input
+                    error={crud.formErrors.material}
+                    options={MATERIAL_TYPES.map((m) => ({ value: m, label: m }))}
+                  />
+                </FormField>
+                <FormField label="计划日期" required error={crud.formErrors.scheduledDate}>
+                  <FormInput
                     type="date"
                     value={formData.scheduledDate}
                     onChange={(e) => handleFormChange('scheduledDate', e.target.value)}
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.scheduledDate ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.scheduledDate}
                   />
-                  {formErrors.scheduledDate && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.scheduledDate}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    计划趟数 <span className="text-danger-500">*</span>
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="计划趟数" required error={crud.formErrors.plannedTrips}>
+                  <FormInput
                     type="number"
                     value={formData.plannedTrips}
                     onChange={(e) => handleFormChange('plannedTrips', Number(e.target.value))}
                     placeholder="请输入计划趟数"
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.plannedTrips ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.plannedTrips}
                   />
-                  {formErrors.plannedTrips && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.plannedTrips}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    计划方量(吨) <span className="text-danger-500">*</span>
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="计划方量(吨)" required error={crud.formErrors.plannedQuantity}>
+                  <FormInput
                     type="number"
                     value={formData.plannedQuantity}
                     onChange={(e) => handleFormChange('plannedQuantity', Number(e.target.value))}
                     placeholder="请输入计划方量"
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.plannedQuantity ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.plannedQuantity}
                   />
-                  {formErrors.plannedQuantity && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.plannedQuantity}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    运输距离(公里) <span className="text-danger-500">*</span>
-                  </label>
-                  <input
+                </FormField>
+                <FormField label="运输距离(公里)" required error={crud.formErrors.distance}>
+                  <FormInput
                     type="number"
                     value={formData.distance}
                     onChange={(e) => handleFormChange('distance', Number(e.target.value))}
                     placeholder="请输入运输距离"
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                      formErrors.distance ? 'border-danger-400' : 'border-neutral-300'
-                    )}
+                    error={crud.formErrors.distance}
                   />
-                  {formErrors.distance && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.distance}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    任务状态
-                  </label>
-                  <select
+                </FormField>
+                <FormField label="任务状态">
+                  <FormSelect
                     value={formData.status}
                     onChange={(e) => handleFormChange('status', e.target.value)}
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
-                  >
-                    {Object.entries(TASK_STATUS).map(([key, val]) => (
-                      <option key={key} value={key}>
-                        {val.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    options={Object.entries(TASK_STATUS).map(([key, val]) => ({ value: key, label: val.label }))}
+                  />
+                </FormField>
               </div>
             </div>
 
             <div className="space-y-4">
-              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                <div className="w-1 h-5 bg-warning-500 rounded-full" />
-                运输资源
-              </h3>
+              <SectionHeader title="运输资源" color="warning" />
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    运输车辆 <span className="text-danger-500">*</span>
-                  </label>
-                  <select
+                <FormField label="运输车辆" required error={crud.formErrors.vehicleId}>
+                  <FormSelect
                     value={formData.vehicleId}
                     onChange={(e) => handleVehicleChange(e.target.value)}
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white',
-                      formErrors.vehicleId ? 'border-danger-400' : 'border-neutral-300'
-                    )}
-                  >
-                    <option value="">请选择车辆</option>
-                    {vehicles.map((vehicle) => (
-                      <option key={vehicle.id} value={vehicle.id}>
-                        {vehicle.plateNumber} - {vehicle.model}
-                      </option>
-                    ))}
-                  </select>
-                  {formErrors.vehicleId && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.vehicleId}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    驾驶员 <span className="text-danger-500">*</span>
-                  </label>
-                  <select
+                    error={crud.formErrors.vehicleId}
+                    options={vehicles.map((v) => ({ value: v.id, label: `${v.plateNumber} - ${v.model}` }))}
+                    placeholder="请选择车辆"
+                  />
+                </FormField>
+                <FormField label="驾驶员" required error={crud.formErrors.driverId}>
+                  <FormSelect
                     value={formData.driverId}
                     onChange={(e) => handleDriverChange(e.target.value)}
-                    className={classNames(
-                      'w-full px-3 py-2 border rounded rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white',
-                      formErrors.driverId ? 'border-danger-400' : 'border-neutral-300'
-                    )}
-                  >
-                    <option value="">请选择驾驶员</option>
-                    {drivers.map((driver) => (
-                      <option key={driver.id} value={driver.id}>
-                        {driver.name} - {driver.licenseType}
-                      </option>
-                    ))}
-                  </select>
-                  {formErrors.driverId && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.driverId}</p>
-                  )}
-                </div>
+                    error={crud.formErrors.driverId}
+                    options={drivers.map((d) => ({ value: d.id, label: `${d.name} - ${d.licenseType}` }))}
+                    placeholder="请选择驾驶员"
+                  />
+                </FormField>
               </div>
             </div>
 
             <div className="space-y-4">
-              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                <div className="w-1 h-5 bg-success-500 rounded-full" />
-                运输路线
-              </h3>
+              <SectionHeader title="运输路线" color="success" />
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    装料地点 <span className="text-danger-500">*</span>
-                  </label>
+                <FormField label="装料地点" required error={crud.formErrors.fromLocation}>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary-500" />
-                    <input
+                    <FormInput
                       type="text"
                       value={formData.fromLocation}
                       onChange={(e) => handleFormChange('fromLocation', e.target.value)}
                       placeholder="请输入装料地点"
-                      className={classNames(
-                        'w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                        formErrors.fromLocation ? 'border-danger-400' : 'border-neutral-300'
-                      )}
+                      error={crud.formErrors.fromLocation}
+                      className="pl-10 pr-3"
                     />
                   </div>
-                  {formErrors.fromLocation && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.fromLocation}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
-                    卸料地点 <span className="text-danger-500">*</span>
-                  </label>
+                </FormField>
+                <FormField label="卸料地点" required error={crud.formErrors.toLocation}>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-danger-500" />
-                    <input
+                    <FormInput
                       type="text"
                       value={formData.toLocation}
                       onChange={(e) => handleFormChange('toLocation', e.target.value)}
                       placeholder="请输入卸料地点"
-                      className={classNames(
-                        'w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
-                        formErrors.toLocation ? 'border-danger-400' : 'border-neutral-300'
-                      )}
+                      error={crud.formErrors.toLocation}
+                      className="pl-10 pr-3"
                     />
                   </div>
-                  {formErrors.toLocation && (
-                    <p className="text-xs text-danger-500 mt-1">{formErrors.toLocation}</p>
-                  )}
-                </div>
+                </FormField>
               </div>
             </div>
           </div>
         </Modal>
       )}
 
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
+      <ToastContainer toasts={crud.toasts} onRemove={crud.removeToast} />
     </div>
   );
 }

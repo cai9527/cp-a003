@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BarChart3, Truck, Calendar, Download, TrendingUp, BarChart2, PieChart } from 'lucide-react';
+import { BarChart3, Truck, Calendar, Download, BarChart2 } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -18,6 +18,8 @@ import {
 import { useStatisticsStore } from '@/store/useStatisticsStore';
 import StatCard from '@/components/Charts/StatCard';
 import { Card } from '@/components/UI/Card';
+import SectionHeader from '@/components/UI/SectionHeader';
+import RankingItem from '@/components/UI/RankingItem';
 import { formatWeight, formatNumber, exportToCSV } from '@/utils';
 
 const COLORS = ['#165DFF', '#36D399', '#FBBD23', '#F87272', '#8B5CF6', '#F472B6'];
@@ -98,10 +100,7 @@ export default function StatisticsPage() {
         <div className="lg:col-span-2 space-y-6">
           <div className="card p-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-primary-500" />
-                运输量趋势
-              </h3>
+              <SectionHeader title="运输量趋势" color="primary" />
               <div className="flex bg-neutral-100 rounded-lg p-1">
                 <button
                   onClick={() => setActiveTab('daily')}
@@ -165,10 +164,7 @@ export default function StatisticsPage() {
 
           <div className="card p-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
-                <Truck className="w-5 h-5 text-primary-500" />
-                车辆运输排行
-              </h3>
+              <SectionHeader title="车辆运输排行" color="primary" />
               <select className="px-3 py-1.5 border border-neutral-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white">
                 <option>本月</option>
                 <option>上月</option>
@@ -177,43 +173,28 @@ export default function StatisticsPage() {
             </div>
             <div className="space-y-3">
               {vehicleStats.slice(0, 5).map((vehicle, index) => (
-                <div key={vehicle.vehicleId} className="flex items-center gap-4">
-                  <div
-                    className={
-                      index === 0
-                        ? 'w-8 h-8 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center text-white font-bold text-sm'
-                        : index === 1
-                        ? 'w-8 h-8 rounded-full bg-gradient-to-br from-gray-300 to-gray-500 flex items-center justify-center text-white font-bold text-sm'
-                        : index === 2
-                        ? 'w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white font-bold text-sm'
-                        : 'w-8 h-8 rounded-full bg-neutral-200 flex items-center justify-center text-neutral-600 font-bold text-sm'
-                    }
-                  >
-                    {index + 1}
+                <RankingItem key={vehicle.vehicleId} rank={index + 1}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-medium text-neutral-800">{vehicle.plateNumber}</span>
+                    <span className="text-sm text-primary-600 font-medium">
+                      {formatWeight(vehicle.totalWeight)}
+                    </span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-medium text-neutral-800">{vehicle.plateNumber}</span>
-                      <span className="text-sm text-primary-600 font-medium">
-                        {formatWeight(vehicle.totalWeight)}
-                      </span>
-                    </div>
-                    <div className="h-2 bg-neutral-200 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-primary-500 to-primary-600 rounded-full"
-                        style={{
-                          width: `${(vehicle.totalWeight / vehicleStats[0].totalWeight) * 100}%`,
-                        }}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between mt-1 text-xs text-neutral-500">
-                      <span>{vehicle.trips}趟</span>
-                      <span>
-                        完成率: {vehicle.completionRate}%
-                      </span>
-                    </div>
+                  <div className="h-2 bg-neutral-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-primary-500 to-primary-600 rounded-full"
+                      style={{
+                        width: `${(vehicle.totalWeight / vehicleStats[0].totalWeight) * 100}%`,
+                      }}
+                    />
                   </div>
-                </div>
+                  <div className="flex items-center justify-between mt-1 text-xs text-neutral-500">
+                    <span>{vehicle.trips}趟</span>
+                    <span>
+                      完成率: {vehicle.completionRate}%
+                    </span>
+                  </div>
+                </RankingItem>
               ))}
             </div>
           </div>
@@ -221,10 +202,7 @@ export default function StatisticsPage() {
 
         <div className="space-y-6">
           <div className="card p-6">
-            <h3 className="font-semibold text-neutral-800 flex items-center gap-2 mb-6">
-              <PieChart className="w-5 h-5 text-primary-500" />
-              物料运输分布
-            </h3>
+            <SectionHeader title="物料运输分布" color="primary" className="mb-6" />
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <RechartsPieChart>
@@ -269,40 +247,22 @@ export default function StatisticsPage() {
           </div>
 
           <div className="card p-6">
-            <h3 className="font-semibold text-neutral-800 flex items-center gap-2 mb-6">
-              <TrendingUp className="w-5 h-5 text-success-500" />
-              驾驶员绩效排行
-            </h3>
+            <SectionHeader title="驾驶员绩效排行" color="success" className="mb-6" />
             <div className="space-y-4">
               {driverStats().slice(0, 5).map((driver, index) => (
-                <div key={driver.driverId} className="flex items-center gap-3">
-                  <div
-                    className={
-                      index === 0
-                        ? 'w-8 h-8 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0'
-                        : index === 1
-                        ? 'w-8 h-8 rounded-full bg-gradient-to-br from-gray-300 to-gray-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0'
-                        : index === 2
-                        ? 'w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0'
-                        : 'w-8 h-8 rounded-full bg-neutral-200 flex items-center justify-center text-neutral-600 font-bold text-sm flex-shrink-0'
-                    }
-                  >
-                    {index + 1}
+                <RankingItem key={driver.driverId} rank={index + 1}>
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-neutral-800 truncate">{driver.driverName}</span>
+                    <span className="text-sm text-success-600 font-medium ml-2">
+                      {formatWeight(driver.totalWeight)}
+                    </span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-neutral-800 truncate">{driver.driverName}</span>
-                      <span className="text-sm text-success-600 font-medium ml-2">
-                        {formatWeight(driver.totalWeight)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-neutral-500 mt-0.5">
-                      <span>{driver.trips}趟</span>
-                      <span>•</span>
-                      <span>{driver.workHours}小时</span>
-                    </div>
+                  <div className="flex items-center gap-2 text-xs text-neutral-500 mt-0.5">
+                    <span>{driver.trips}趟</span>
+                    <span>•</span>
+                    <span>{driver.workHours}小时</span>
                   </div>
-                </div>
+                </RankingItem>
               ))}
             </div>
           </div>
@@ -310,7 +270,7 @@ export default function StatisticsPage() {
       </div>
 
       <div className="card p-6">
-        <h3 className="font-semibold text-neutral-800 mb-6">详细数据</h3>
+        <SectionHeader title="详细数据" className="mb-6" />
         <div className="flex bg-neutral-100 rounded-lg p-1 mb-6 w-fit">
           <button
             onClick={() => setActiveTab('daily')}
