@@ -165,6 +165,22 @@ body {
   .animate-bounce-light {
     animation: bounceLight 1s infinite;
   }
+
+  .transition-sidebar {
+    transition: margin-left 0.3s ease-in-out, width 0.3s ease-in-out;
+  }
+
+  .content-auto {
+    content-visibility: auto;
+  }
+
+  .will-change-transform {
+    will-change: transform;
+  }
+
+  .will-change-width {
+    will-change: width, margin-left;
+  }
 }
 
 @keyframes fadeIn {

@@ -21,6 +21,13 @@ interface MenuItem {
   children?: MenuItem[];
 }
 
+interface SidebarProps {
+  collapsed: boolean;
+  onToggle: () => void;
+  isMobileOpen?: boolean;
+  onCloseMobile?: () => void;
+}
+
 const menuItems: MenuItem[] = [
   { path: '/', label: '仪表盘', icon: LayoutDashboard },
   { path: '/vehicles', label: '车辆管理', icon: Truck },
@@ -48,8 +55,7 @@ const menuItems: MenuItem[] = [
   },
 ];
 
-export default function Sidebar() {
-  const [collapsed, setCollapsed] = useState(false);
+export default function Sidebar({ collapsed, onToggle, isMobileOpen = false, onCloseMobile }: SidebarProps) {
   const [expandedMenus, setExpandedMenus] = useState<string[]>(['/tasks', '/system']);
   const location = useLocation();
 
@@ -98,6 +104,11 @@ export default function Sidebar() {
         ) : (
           <NavLink
             to={item.path}
+            onClick={() => {
+              if (isMobileOpen && onCloseMobile) {
+                onCloseMobile();
+              }
+            }}
             className={({ isActive }) =>
               classNames(
                 'sidebar-item',
@@ -120,12 +131,22 @@ export default function Sidebar() {
   };
 
   return (
-    <aside
-      className={classNames(
-        'fixed left-0 top-0 h-full bg-white border-r border-neutral-200 transition-all duration-300 z-40 flex flex-col',
-        collapsed ? 'w-16' : 'w-64'
+    <>
+      {isMobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          onClick={onCloseMobile}
+        />
       )}
-    >
+      <aside
+        className={classNames(
+          'fixed left-0 top-0 h-full bg-white border-r border-neutral-200 transition-all duration-300 ease-in-out z-40 flex flex-col shadow-sm will-change-transform',
+          collapsed ? 'w-16' : 'w-64',
+          'md:translate-x-0',
+          isMobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        )}
+        style={{ width: collapsed ? '4rem' : '16rem' }}
+      >
       <div className="h-16 flex items-center justify-between px-4 border-b border-neutral-200">
         {!collapsed && (
           <div className="flex items-center gap-2">
@@ -148,7 +169,7 @@ export default function Sidebar() {
 
       <div className="p-2 border-t border-neutral-200">
         <button
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={onToggle}
           className="sidebar-item w-full justify-center text-neutral-500 hover:text-primary-600"
         >
           {collapsed ? (
@@ -162,5 +183,6 @@ export default function Sidebar() {
         </button>
       </div>
     </aside>
+    </>
   );
 }

@@ -5,7 +5,11 @@ import { useSafetyStore } from '@/store/useSafetyStore';
 import { formatDateTime, classNames } from '@/utils';
 import { ROLES } from '@/types';
 
-export default function Header() {
+interface HeaderProps {
+  onMenuToggle?: () => void;
+}
+
+export default function Header({ onMenuToggle }: HeaderProps) {
   const { currentUser, logout } = useAuthStore();
   const { alerts } = useSafetyStore();
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -16,7 +20,11 @@ export default function Header() {
   return (
     <header className="h-16 bg-white border-b border-neutral-200 flex items-center justify-between px-6 sticky top-0 z-30">
       <div className="flex items-center gap-4">
-        <button className="lg:hidden p-2 hover:bg-neutral-100 rounded-lg">
+        <button
+          onClick={onMenuToggle}
+          className="md:hidden p-2 hover:bg-neutral-100 rounded-lg transition-colors"
+          aria-label="切换菜单"
+        >
           <Menu className="w-5 h-5 text-neutral-600" />
         </button>
         <div className="relative hidden md:block">
