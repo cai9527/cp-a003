@@ -10,6 +10,7 @@ import StatisticsPage from '@/pages/Statistics';
 import SafetyPage from '@/pages/Safety';
 import UsersPage from '@/pages/System/users';
 import BackupPage from '@/pages/System/backup';
+import { FEATURES_IN_DEVELOPMENT } from '@/constants/features';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
@@ -48,28 +49,20 @@ export default function App() {
           <Route path="safety" element={<PermissionGuard><SafetyPage /></PermissionGuard>} />
           <Route path="system/users" element={<PermissionGuard><UsersPage /></PermissionGuard>} />
           <Route path="system/backup" element={<PermissionGuard><BackupPage /></PermissionGuard>} />
-          <Route
-            path="system/permissions"
-            element={
-              <PermissionGuard>
-                <div className="card p-8 text-center">
-                  <h2 className="text-xl font-semibold text-neutral-800 mb-2">权限配置</h2>
-                  <p className="text-neutral-500">功能开发中...</p>
-                </div>
-              </PermissionGuard>
-            }
-          />
-          <Route
-            path="tasks/tracking"
-            element={
-              <PermissionGuard>
-                <div className="card p-8 text-center">
-                  <h2 className="text-xl font-semibold text-neutral-800 mb-2">实时跟踪</h2>
-                  <p className="text-neutral-500">功能开发中...</p>
-                </div>
-              </PermissionGuard>
-            }
-          />
+          {FEATURES_IN_DEVELOPMENT.map((feature) => (
+            <Route
+              key={feature.path}
+              path={feature.path.replace('/', '')}
+              element={
+                <PermissionGuard>
+                  <div className="card p-8 text-center">
+                    <h2 className="text-xl font-semibold text-neutral-800 mb-2">{feature.name}</h2>
+                    <p className="text-neutral-500">功能开发中...</p>
+                  </div>
+                </PermissionGuard>
+              }
+            />
+          ))}
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

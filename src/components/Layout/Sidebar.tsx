@@ -14,6 +14,7 @@ import {
 import { useState, useMemo } from 'react';
 import { classNames } from '@/utils';
 import { useAuthStore } from '@/store/useAuthStore';
+import { isFeatureInDevelopment } from '@/constants/features';
 
 interface MenuItem {
   path: string;
@@ -73,6 +74,9 @@ export default function Sidebar({ collapsed, onToggle, isMobileOpen = false, onC
             return { ...item, children: filteredChildren };
           }
           if (!hasPathPermission(item.path)) {
+            return null;
+          }
+          if (isFeatureInDevelopment(item.path)) {
             return null;
           }
           return item;
