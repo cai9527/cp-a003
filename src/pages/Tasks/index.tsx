@@ -1,22 +1,65 @@
 import { useState } from 'react';
-import { Plus, Search, Filter, Edit2, Trash2, Eye, MapPin, Clock, Truck } from 'lucide-react';
+import { Plus, Search, Filter, Edit2, Trash2, Eye, MapPin, Clock, Truck, Save, X } from 'lucide-react';
 import { useTaskStore } from '@/store/useTaskStore';
+import { useVehicleStore } from '@/store/useVehicleStore';
+import { useDriverStore } from '@/store/useDriverStore';
 import DataTable from '@/components/UI/DataTable';
 import StatusBadge from '@/components/UI/StatusBadge';
 import Modal from '@/components/UI/Modal';
-import { TASK_STATUS } from '@/types';
+import { ToastContainer } from '@/components/UI/Toast';
+import { useToast } from '@/hooks/useToast';
+import { TASK_STATUS, MATERIAL_TYPES } from '@/types';
 import { formatDate, formatDateTime, formatWeight, classNames } from '@/utils';
 import type { TransportTask } from '@/types';
 
 export default function TasksPage() {
-  const { tasks, loading, deleteTask } = useTaskStore();
+  const { tasks, loading, deleteTask, addTask, updateTask } = useTaskStore();
+  const { vehicles } = useVehicleStore();
+  const { drivers } = useDriverStore();
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedTask, setSelectedTask] = useState<TransportTask | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showFormModal, setShowFormModal] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const { toasts, removeToast, success, error } = useToast();
   const pageSize = 10;
+
+  const defaultFormData = {
+    taskNo: '',
+    name: '',
+    vehicleId: '',
+    driverId: '',
+    vehiclePlate: '',
+    driverName: '',
+    material: '渣土',
+    materialType: '渣土',
+    plannedTrips: 5,
+    plannedLoads: 5,
+    actualTrips: 0,
+    plannedQuantity: 100,
+    actualQuantity: 0,
+    distance: 10,
+    fromLocation: '',
+    toLocation: '',
+    scheduledDate: formatDate(new Date()),
+    status: 'pending' as TransportTask['status'],
+    route: {
+      id: '',
+      name: '',
+      startLocation: { lat: 0, lng: 0 },
+      endLocation: { lat: 0, lng: 0 },
+      distance: 10,
+      estimatedTime: 60,
+    },
+    transportRecords: [],
+  };
+
+  const [formData, setFormData] = useState(defaultFormData);
 
   const filteredTasks = tasks.filter((t) => {
     const matchSearch =
@@ -45,6 +88,164 @@ export default function TasksPage() {
       deleteTask(selectedTask.id);
       setShowDeleteConfirm(false);
       setSelectedTask(null);
+      success('任务删除成功');
+    }
+  };
+
+  const generateTaskNo = () => {
+    const date = new Date();
+    const dateStr = formatDate(date, 'YYYYMMDD');
+    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    return `T${dateStr}${random}`;
+  };
+
+  const handleAdd = () => {
+    setIsEditing(false);
+    setFormData({ ...defaultFormData, taskNo: generateTaskNo() });
+    setFormErrors({});
+    setShowFormModal(true);
+  };
+
+  const handleEdit = (task: TransportTask) => {
+    setIsEditing(true);
+    setSelectedTask(task);
+    setFormData({
+      taskNo: task.taskNo,
+      name: task.name,
+      vehicleId: task.vehicleId,
+      driverId: task.driverId,
+      vehiclePlate: task.vehiclePlate,
+      driverName: task.driverName,
+      material: task.material,
+      materialType: task.materialType,
+      plannedTrips: task.plannedTrips,
+      plannedLoads: task.plannedLoads,
+      actualTrips: task.actualTrips,
+      plannedQuantity: task.plannedQuantity,
+      actualQuantity: task.actualQuantity,
+      distance: task.distance,
+      fromLocation: task.fromLocation,
+      toLocation: task.toLocation,
+      scheduledDate: formatDate(task.scheduledDate),
+      status: task.status,
+      route: task.route,
+      transportRecords: task.transportRecords,
+    });
+    setFormErrors({});
+    setShowFormModal(true);
+  };
+
+  const handleVehicleChange = (vehicleId: string) => {
+    const vehicle = vehicles.find((v) => v.id === vehicleId);
+    if (vehicle) {
+      handleFormChange('vehicleId', vehicleId);
+      handleFormChange('vehiclePlate', vehicle.plateNumber);
+      if (vehicle.driverId) {
+        handleFormChange('driverId', vehicle.driverId);
+        handleFormChange('driverName', vehicle.driverName || '');
+      }
+    }
+  };
+
+  const handleDriverChange = (driverId: string) => {
+    const driver = drivers.find((d) => d.id === driverId);
+    if (driver) {
+      handleFormChange('driverId', driverId);
+      handleFormChange('driverName', driver.name);
+    }
+  };
+
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+
+    if (!formData.taskNo.trim()) {
+      errors.taskNo = '请输入任务编号';
+    }
+
+    if (!formData.name.trim()) {
+      errors.name = '请输入任务名称';
+    }
+
+    if (!formData.vehicleId) {
+      errors.vehicleId = '请选择运输车辆';
+    }
+
+    if (!formData.driverId) {
+      errors.driverId = '请选择驾驶员';
+    }
+
+    if (!formData.material) {
+      errors.material = '请选择运输物料';
+    }
+
+    if (!formData.plannedTrips || formData.plannedTrips <= 0) {
+      errors.plannedTrips = '请输入有效的计划趟数';
+    }
+
+    if (!formData.plannedQuantity || formData.plannedQuantity <= 0) {
+      errors.plannedQuantity = '请输入有效的计划方量';
+    }
+
+    if (!formData.distance || formData.distance <= 0) {
+      errors.distance = '请输入有效的运输距离';
+    }
+
+    if (!formData.fromLocation.trim()) {
+      errors.fromLocation = '请输入装料地点';
+    }
+
+    if (!formData.toLocation.trim()) {
+      errors.toLocation = '请输入卸料地点';
+    }
+
+    if (!formData.scheduledDate) {
+      errors.scheduledDate = '请选择计划日期';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSubmit = async () => {
+    if (!validateForm()) {
+      error('请检查表单填写是否正确');
+      return;
+    }
+
+    setFormLoading(true);
+    try {
+      if (isEditing && selectedTask) {
+        await updateTask(selectedTask.id, formData);
+        success('任务信息更新成功');
+      } else {
+        await addTask(formData);
+        success('任务创建成功');
+      }
+      setShowFormModal(false);
+    } catch (err) {
+      error('操作失败，请重试');
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleFormChange = (field: string, value: any) => {
+    setFormData((prev) => {
+      const updated = { ...prev, [field]: value };
+      if (field === 'material') {
+        updated.materialType = value;
+      }
+      if (field === 'plannedTrips') {
+        updated.plannedLoads = value;
+      }
+      return updated;
+    });
+    if (formErrors[field]) {
+      setFormErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
     }
   };
 
@@ -171,6 +372,7 @@ export default function TasksPage() {
             <Eye className="w-4 h-4" />
           </button>
           <button
+            onClick={() => handleEdit(row)}
             className="p-1.5 text-neutral-600 hover:bg-neutral-100 rounded transition-colors"
             title="编辑"
           >
@@ -197,7 +399,7 @@ export default function TasksPage() {
         </div>
         <div className="flex items-center gap-3">
           <button className="btn btn-default">实时跟踪</button>
-          <button className="btn btn-primary flex items-center gap-2">
+          <button onClick={handleAdd} className="btn btn-primary flex items-center gap-2">
             <Plus className="w-4 h-4" />
             新增任务
           </button>
@@ -457,6 +659,299 @@ export default function TasksPage() {
           </div>
         </Modal>
       )}
+
+      {showFormModal && (
+        <Modal
+          open={showFormModal}
+          onClose={() => setShowFormModal(false)}
+          title={isEditing ? '编辑任务' : '新增任务'}
+          size="xl"
+          footer={
+            <>
+              <button
+                onClick={() => setShowFormModal(false)}
+                className="btn btn-default"
+                disabled={formLoading}
+              >
+                <X className="w-4 h-4" />
+                取消
+              </button>
+              <button
+                onClick={handleSubmit}
+                className="btn btn-primary"
+                disabled={formLoading}
+              >
+                <Save className="w-4 h-4" />
+                {formLoading ? '保存中...' : '保存'}
+              </button>
+            </>
+          }
+        >
+          <div className="space-y-6">
+            <div className="space-y-4">
+              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
+                <div className="w-1 h-5 bg-primary-500 rounded-full" />
+                基本信息
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    任务编号 <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.taskNo}
+                    onChange={(e) => handleFormChange('taskNo', e.target.value)}
+                    placeholder="请输入任务编号"
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.taskNo ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.taskNo && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.taskNo}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    任务名称 <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => handleFormChange('name', e.target.value)}
+                    placeholder="请输入任务名称"
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.name ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.name && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.name}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    运输物料 <span className="text-danger-500">*</span>
+                  </label>
+                  <select
+                    value={formData.material}
+                    onChange={(e) => handleFormChange('material', e.target.value)}
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded rounded-lg bg-white',
+                      formErrors.material ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  >
+                    {MATERIAL_TYPES.map((material) => (
+                      <option key={material} value={material}>
+                        {material}
+                      </option>
+                    ))}
+                  </select>
+                  {formErrors.material && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.material}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    计划日期 <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.scheduledDate}
+                    onChange={(e) => handleFormChange('scheduledDate', e.target.value)}
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.scheduledDate ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.scheduledDate && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.scheduledDate}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    计划趟数 <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.plannedTrips}
+                    onChange={(e) => handleFormChange('plannedTrips', Number(e.target.value))}
+                    placeholder="请输入计划趟数"
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.plannedTrips ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.plannedTrips && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.plannedTrips}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    计划方量(吨) <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.plannedQuantity}
+                    onChange={(e) => handleFormChange('plannedQuantity', Number(e.target.value))}
+                    placeholder="请输入计划方量"
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.plannedQuantity ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.plannedQuantity && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.plannedQuantity}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    运输距离(公里) <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.distance}
+                    onChange={(e) => handleFormChange('distance', Number(e.target.value))}
+                    placeholder="请输入运输距离"
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.distance ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.distance && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.distance}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    任务状态
+                  </label>
+                  <select
+                    value={formData.status}
+                    onChange={(e) => handleFormChange('status', e.target.value)}
+                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
+                  >
+                    {Object.entries(TASK_STATUS).map(([key, val]) => (
+                      <option key={key} value={key}>
+                        {val.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
+                <div className="w-1 h-5 bg-warning-500 rounded-full" />
+                运输资源
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    运输车辆 <span className="text-danger-500">*</span>
+                  </label>
+                  <select
+                    value={formData.vehicleId}
+                    onChange={(e) => handleVehicleChange(e.target.value)}
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white',
+                      formErrors.vehicleId ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  >
+                    <option value="">请选择车辆</option>
+                    {vehicles.map((vehicle) => (
+                      <option key={vehicle.id} value={vehicle.id}>
+                        {vehicle.plateNumber} - {vehicle.model}
+                      </option>
+                    ))}
+                  </select>
+                  {formErrors.vehicleId && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.vehicleId}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    驾驶员 <span className="text-danger-500">*</span>
+                  </label>
+                  <select
+                    value={formData.driverId}
+                    onChange={(e) => handleDriverChange(e.target.value)}
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white',
+                      formErrors.driverId ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  >
+                    <option value="">请选择驾驶员</option>
+                    {drivers.map((driver) => (
+                      <option key={driver.id} value={driver.id}>
+                        {driver.name} - {driver.licenseType}
+                      </option>
+                    ))}
+                  </select>
+                  {formErrors.driverId && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.driverId}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
+                <div className="w-1 h-5 bg-success-500 rounded-full" />
+                运输路线
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    装料地点 <span className="text-danger-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary-500" />
+                    <input
+                      type="text"
+                      value={formData.fromLocation}
+                      onChange={(e) => handleFormChange('fromLocation', e.target.value)}
+                      placeholder="请输入装料地点"
+                      className={classNames(
+                        'w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                        formErrors.fromLocation ? 'border-danger-400' : 'border-neutral-300'
+                      )}
+                    />
+                  </div>
+                  {formErrors.fromLocation && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.fromLocation}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    卸料地点 <span className="text-danger-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-danger-500" />
+                    <input
+                      type="text"
+                      value={formData.toLocation}
+                      onChange={(e) => handleFormChange('toLocation', e.target.value)}
+                      placeholder="请输入卸料地点"
+                      className={classNames(
+                        'w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                        formErrors.toLocation ? 'border-danger-400' : 'border-neutral-300'
+                      )}
+                    />
+                  </div>
+                  {formErrors.toLocation && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.toLocation}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   );
 }

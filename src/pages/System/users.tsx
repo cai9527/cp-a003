@@ -1,22 +1,41 @@
 import { useState } from 'react';
-import { Plus, Search, Filter, Edit2, Trash2, Eye, User as UserIcon, Shield, Lock } from 'lucide-react';
+import { Plus, Search, Filter, Edit2, Trash2, Eye, User as UserIcon, Shield, Lock, Save, X } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import DataTable from '@/components/UI/DataTable';
 import StatusBadge from '@/components/UI/StatusBadge';
 import Modal from '@/components/UI/Modal';
+import { ToastContainer } from '@/components/UI/Toast';
+import { useToast } from '@/hooks/useToast';
 import { ROLES } from '@/types';
-import { formatDate, classNames } from '@/utils';
-import type { User } from '@/types';
+import { formatDate, classNames, validatePhone } from '@/utils';
+import type { User, Role } from '@/types';
 
 export default function UsersPage() {
-  const { users, loading, deleteUser } = useAuthStore();
+  const { users, loading, deleteUser, addUser, updateUser } = useAuthStore();
   const [searchText, setSearchText] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showFormModal, setShowFormModal] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const { toasts, removeToast, success, error } = useToast();
   const pageSize = 10;
+
+  const defaultFormData = {
+    username: '',
+    name: '',
+    phone: '',
+    email: '',
+    role: 'dispatcher' as Role,
+    department: '',
+    status: 'active' as User['status'],
+  };
+
+  const [formData, setFormData] = useState(defaultFormData);
 
   const filteredUsers = users.filter((u) => {
     const matchSearch =
@@ -44,6 +63,95 @@ export default function UsersPage() {
       deleteUser(selectedUser.id);
       setShowDeleteConfirm(false);
       setSelectedUser(null);
+      success('用户删除成功');
+    }
+  };
+
+  const handleAdd = () => {
+    setIsEditing(false);
+    setFormData(defaultFormData);
+    setFormErrors({});
+    setShowFormModal(true);
+  };
+
+  const handleEdit = (user: User) => {
+    setIsEditing(true);
+    setSelectedUser(user);
+    setFormData({
+      username: user.username,
+      name: user.name,
+      phone: user.phone,
+      email: user.email || '',
+      role: user.role,
+      department: user.department || '',
+      status: user.status,
+    });
+    setFormErrors({});
+    setShowFormModal(true);
+  };
+
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+
+    if (!formData.username.trim()) {
+      errors.username = '请输入用户名';
+    } else if (formData.username.length < 3) {
+      errors.username = '用户名至少3个字符';
+    }
+
+    if (!formData.name.trim()) {
+      errors.name = '请输入姓名';
+    }
+
+    if (!formData.phone.trim()) {
+      errors.phone = '请输入联系电话';
+    } else if (!validatePhone(formData.phone)) {
+      errors.phone = '手机号码格式不正确';
+    }
+
+    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      errors.email = '邮箱格式不正确';
+    }
+
+    if (!formData.role) {
+      errors.role = '请选择角色';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSubmit = async () => {
+    if (!validateForm()) {
+      error('请检查表单填写是否正确');
+      return;
+    }
+
+    setFormLoading(true);
+    try {
+      if (isEditing && selectedUser) {
+        await updateUser(selectedUser.id, formData);
+        success('用户信息更新成功');
+      } else {
+        await addUser(formData);
+        success('用户添加成功');
+      }
+      setShowFormModal(false);
+    } catch (err) {
+      error('操作失败，请重试');
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleFormChange = (field: string, value: any) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    if (formErrors[field]) {
+      setFormErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
     }
   };
 
@@ -148,6 +256,7 @@ export default function UsersPage() {
             <Lock className="w-4 h-4" />
           </button>
           <button
+            onClick={() => handleEdit(row)}
             className="p-1.5 text-neutral-600 hover:bg-neutral-100 rounded transition-colors"
             title="编辑"
           >
@@ -172,7 +281,7 @@ export default function UsersPage() {
           <h1 className="text-2xl font-bold text-neutral-800">用户管理</h1>
           <p className="text-sm text-neutral-500 mt-1">管理系统用户账户、角色权限和个人信息</p>
         </div>
-        <button className="btn btn-primary flex items-center gap-2">
+        <button onClick={handleAdd} className="btn btn-primary flex items-center gap-2">
           <Plus className="w-4 h-4" />
           新增用户
         </button>
@@ -371,6 +480,203 @@ export default function UsersPage() {
           </div>
         </Modal>
       )}
+
+      {showFormModal && (
+        <Modal
+          open={showFormModal}
+          onClose={() => setShowFormModal(false)}
+          title={isEditing ? '编辑用户' : '新增用户'}
+          size="lg"
+          footer={
+            <>
+              <button
+                onClick={() => setShowFormModal(false)}
+                className="btn btn-default"
+                disabled={formLoading}
+              >
+                <X className="w-4 h-4" />
+                取消
+              </button>
+              <button
+                onClick={handleSubmit}
+                className="btn btn-primary"
+                disabled={formLoading}
+              >
+                <Save className="w-4 h-4" />
+                {formLoading ? '保存中...' : '保存'}
+              </button>
+            </>
+          }
+        >
+          <div className="space-y-6">
+            <div className="space-y-4">
+              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
+                <div className="w-1 h-5 bg-primary-500 rounded-full" />
+                基本信息
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    用户名 <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.username}
+                    onChange={(e) => handleFormChange('username', e.target.value)}
+                    placeholder="请输入用户名"
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.username ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.username && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.username}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    姓名 <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => handleFormChange('name', e.target.value)}
+                    placeholder="请输入姓名"
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.name ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.name && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.name}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    联系电话 <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.phone}
+                    onChange={(e) => handleFormChange('phone', e.target.value)}
+                    placeholder="请输入联系电话"
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.phone ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.phone && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.phone}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    邮箱
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => handleFormChange('email', e.target.value)}
+                    placeholder="请输入邮箱"
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.email ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.email && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.email}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    部门
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.department}
+                    onChange={(e) => handleFormChange('department', e.target.value)}
+                    placeholder="请输入部门"
+                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    状态
+                  </label>
+                  <div className="flex items-center gap-4 py-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        value="active"
+                        checked={formData.status === 'active'}
+                        onChange={(e) => handleFormChange('status', e.target.value)}
+                        className="w-4 h-4 text-primary-600"
+                      />
+                      <span className="text-sm text-neutral-700">正常</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        value="inactive"
+                        checked={formData.status === 'inactive'}
+                        onChange={(e) => handleFormChange('status', e.target.value)}
+                        className="w-4 h-4 text-primary-600"
+                      />
+                      <span className="text-sm text-neutral-700">禁用</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
+                <div className="w-1 h-5 bg-warning-500 rounded-full" />
+                角色权限
+              </h3>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-2">
+                  用户角色 <span className="text-danger-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {Object.entries(ROLES).map(([key, val]) => (
+                    <label
+                      key={key}
+                      className={classNames(
+                        'p-3 border rounded-lg cursor-pointer transition-all',
+                        formData.role === key
+                          ? 'border-primary-500 bg-primary-50'
+                          : 'border-neutral-200 hover:border-neutral-300'
+                      )}
+                    >
+                      <div className="flex items-start gap-2">
+                        <input
+                          type="radio"
+                          value={key}
+                          checked={formData.role === key}
+                          onChange={(e) => handleFormChange('role', e.target.value)}
+                          className="mt-0.5 w-4 h-4 text-primary-600"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-neutral-800 text-sm">{val.label}</div>
+                          <p className="text-xs text-neutral-500 mt-0.5 line-clamp-2">
+                            {val.description}
+                          </p>
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                {formErrors.role && (
+                  <p className="text-xs text-danger-500 mt-1">{formErrors.role}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   );
 }

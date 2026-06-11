@@ -1,22 +1,54 @@
 import { useState } from 'react';
-import { Plus, Search, Filter, Edit2, Trash2, Eye, Phone, FileText } from 'lucide-react';
+import { Plus, Search, Filter, Edit2, Trash2, Eye, Phone, FileText, Save, X } from 'lucide-react';
 import { useDriverStore } from '@/store/useDriverStore';
 import DataTable from '@/components/UI/DataTable';
 import StatusBadge from '@/components/UI/StatusBadge';
 import Modal from '@/components/UI/Modal';
-import { DRIVER_STATUS } from '@/types';
-import { formatDate, classNames } from '@/utils';
+import { ToastContainer } from '@/components/UI/Toast';
+import { useToast } from '@/hooks/useToast';
+import { DRIVER_STATUS, LICENSE_TYPES } from '@/types';
+import { formatDate, classNames, validatePhone, validateIdCard } from '@/utils';
 import type { Driver } from '@/types';
 
 export default function DriversPage() {
-  const { drivers, loading, deleteDriver } = useDriverStore();
+  const { drivers, loading, deleteDriver, addDriver, updateDriver } = useDriverStore();
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showFormModal, setShowFormModal] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const { toasts, removeToast, success, error } = useToast();
   const pageSize = 10;
+
+  const defaultFormData = {
+    name: '',
+    gender: 'male' as Driver['gender'],
+    phone: '',
+    idCard: '',
+    licenseNumber: '',
+    licenseType: 'B2',
+    licenseExpiry: formatDate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)),
+    hireDate: formatDate(new Date()),
+    status: 'on_duty' as Driver['status'],
+    drivingYears: 1,
+    qualificationCert: '',
+    qualificationExpiry: formatDate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)),
+    physicalExpiry: formatDate(new Date(Date.now() + 180 * 24 * 60 * 60 * 1000)),
+    emergencyContact: {
+      name: '',
+      phone: '',
+      relationship: '',
+    },
+    accidentCount: 0,
+    trainingRecords: [],
+  };
+
+  const [formData, setFormData] = useState(defaultFormData);
 
   const filteredDrivers = drivers.filter((d) => {
     const matchSearch =
@@ -44,6 +76,136 @@ export default function DriversPage() {
       deleteDriver(selectedDriver.id);
       setShowDeleteConfirm(false);
       setSelectedDriver(null);
+      success('驾驶员删除成功');
+    }
+  };
+
+  const handleAdd = () => {
+    setIsEditing(false);
+    setFormData(defaultFormData);
+    setFormErrors({});
+    setShowFormModal(true);
+  };
+
+  const handleEdit = (driver: Driver) => {
+    setIsEditing(true);
+    setSelectedDriver(driver);
+    setFormData({
+      name: driver.name,
+      gender: driver.gender,
+      phone: driver.phone,
+      idCard: driver.idCard,
+      licenseNumber: driver.licenseNumber,
+      licenseType: driver.licenseType,
+      licenseExpiry: formatDate(driver.licenseExpiry),
+      hireDate: formatDate(driver.hireDate),
+      status: driver.status,
+      drivingYears: driver.drivingYears,
+      qualificationCert: driver.qualificationCert,
+      qualificationExpiry: formatDate(driver.qualificationExpiry),
+      physicalExpiry: formatDate(driver.physicalExpiry),
+      emergencyContact: { ...driver.emergencyContact },
+      accidentCount: driver.accidentCount,
+      trainingRecords: driver.trainingRecords,
+    });
+    setFormErrors({});
+    setShowFormModal(true);
+  };
+
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+
+    if (!formData.name.trim()) {
+      errors.name = '请输入姓名';
+    }
+
+    if (!formData.phone.trim()) {
+      errors.phone = '请输入联系电话';
+    } else if (!validatePhone(formData.phone)) {
+      errors.phone = '手机号码格式不正确';
+    }
+
+    if (!formData.idCard.trim()) {
+      errors.idCard = '请输入身份证号';
+    } else if (!validateIdCard(formData.idCard)) {
+      errors.idCard = '身份证号格式不正确';
+    }
+
+    if (!formData.licenseNumber.trim()) {
+      errors.licenseNumber = '请输入驾驶证编号';
+    }
+
+    if (!formData.licenseType) {
+      errors.licenseType = '请选择驾驶证类型';
+    }
+
+    if (!formData.licenseExpiry) {
+      errors.licenseExpiry = '请选择驾驶证有效期';
+    }
+
+    if (!formData.hireDate) {
+      errors.hireDate = '请选择入职日期';
+    }
+
+    if (formData.drivingYears < 0) {
+      errors.drivingYears = '驾龄不能为负数';
+    }
+
+    if (formData.emergencyContact.name && !formData.emergencyContact.phone) {
+      errors.emergencyPhone = '请填写紧急联系人电话';
+    } else if (formData.emergencyContact.phone && !validatePhone(formData.emergencyContact.phone)) {
+      errors.emergencyPhone = '紧急联系人电话格式不正确';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSubmit = async () => {
+    if (!validateForm()) {
+      error('请检查表单填写是否正确');
+      return;
+    }
+
+    setFormLoading(true);
+    try {
+      if (isEditing && selectedDriver) {
+        await updateDriver(selectedDriver.id, formData);
+        success('驾驶员信息更新成功');
+      } else {
+        await addDriver(formData);
+        success('驾驶员添加成功');
+      }
+      setShowFormModal(false);
+    } catch (err) {
+      error('操作失败，请重试');
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleFormChange = (field: string, value: any) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    if (formErrors[field]) {
+      setFormErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
+  };
+
+  const handleEmergencyContactChange = (field: string, value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      emergencyContact: { ...prev.emergencyContact, [field]: value },
+    }));
+    if (field === 'phone' && formErrors.emergencyPhone) {
+      setFormErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors.emergencyPhone;
+        return newErrors;
+      });
     }
   };
 
@@ -152,6 +314,7 @@ export default function DriversPage() {
             <FileText className="w-4 h-4" />
           </button>
           <button
+            onClick={() => handleEdit(row)}
             className="p-1.5 text-neutral-600 hover:bg-neutral-100 rounded transition-colors"
             title="编辑"
           >
@@ -176,7 +339,7 @@ export default function DriversPage() {
           <h1 className="text-2xl font-bold text-neutral-800">驾驶员管理</h1>
           <p className="text-sm text-neutral-500 mt-1">管理所有驾驶员的基本信息、资质证书和工作状态</p>
         </div>
-        <button className="btn btn-primary flex items-center gap-2">
+        <button onClick={handleAdd} className="btn btn-primary flex items-center gap-2">
           <Plus className="w-4 h-4" />
           新增驾驶员
         </button>
@@ -424,6 +587,331 @@ export default function DriversPage() {
           </div>
         </Modal>
       )}
+
+      {showFormModal && (
+        <Modal
+          open={showFormModal}
+          onClose={() => setShowFormModal(false)}
+          title={isEditing ? '编辑驾驶员' : '新增驾驶员'}
+          size="xl"
+          footer={
+            <>
+              <button
+                onClick={() => setShowFormModal(false)}
+                className="btn btn-default"
+                disabled={formLoading}
+              >
+                <X className="w-4 h-4" />
+                取消
+              </button>
+              <button
+                onClick={handleSubmit}
+                className="btn btn-primary"
+                disabled={formLoading}
+              >
+                <Save className="w-4 h-4" />
+                {formLoading ? '保存中...' : '保存'}
+              </button>
+            </>
+          }
+        >
+          <div className="space-y-6">
+            <div className="space-y-4">
+              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
+                <div className="w-1 h-5 bg-primary-500 rounded-full" />
+                基本信息
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    姓名 <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => handleFormChange('name', e.target.value)}
+                    placeholder="请输入姓名"
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.name ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.name && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.name}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    性别
+                  </label>
+                  <div className="flex items-center gap-4 py-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        value="male"
+                        checked={formData.gender === 'male'}
+                        onChange={(e) => handleFormChange('gender', e.target.value)}
+                        className="w-4 h-4 text-primary-600"
+                      />
+                      <span className="text-sm text-neutral-700">男</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        value="female"
+                        checked={formData.gender === 'female'}
+                        onChange={(e) => handleFormChange('gender', e.target.value)}
+                        className="w-4 h-4 text-primary-600"
+                      />
+                      <span className="text-sm text-neutral-700">女</span>
+                    </label>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    联系电话 <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.phone}
+                    onChange={(e) => handleFormChange('phone', e.target.value)}
+                    placeholder="请输入联系电话"
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.phone ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.phone && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.phone}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    身份证号 <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.idCard}
+                    onChange={(e) => handleFormChange('idCard', e.target.value)}
+                    placeholder="请输入身份证号"
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.idCard ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.idCard && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.idCard}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    入职日期 <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.hireDate}
+                    onChange={(e) => handleFormChange('hireDate', e.target.value)}
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.hireDate ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.hireDate && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.hireDate}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    驾龄(年)
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.drivingYears}
+                    onChange={(e) => handleFormChange('drivingYears', Number(e.target.value))}
+                    placeholder="请输入驾龄"
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.drivingYears ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.drivingYears && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.drivingYears}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    状态
+                  </label>
+                  <select
+                    value={formData.status}
+                    onChange={(e) => handleFormChange('status', e.target.value)}
+                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white"
+                  >
+                    {Object.entries(DRIVER_STATUS).map(([key, val]) => (
+                      <option key={key} value={key}>
+                        {val.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
+                <div className="w-1 h-5 bg-warning-500 rounded-full" />
+                驾驶资质
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    驾驶证类型 <span className="text-danger-500">*</span>
+                  </label>
+                  <select
+                    value={formData.licenseType}
+                    onChange={(e) => handleFormChange('licenseType', e.target.value)}
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 bg-white',
+                      formErrors.licenseType ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  >
+                    {LICENSE_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                  {formErrors.licenseType && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.licenseType}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    驾驶证编号 <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.licenseNumber}
+                    onChange={(e) => handleFormChange('licenseNumber', e.target.value)}
+                    placeholder="请输入驾驶证编号"
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.licenseNumber ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.licenseNumber && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.licenseNumber}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    驾驶证有效期 <span className="text-danger-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.licenseExpiry}
+                    onChange={(e) => handleFormChange('licenseExpiry', e.target.value)}
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.licenseExpiry ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.licenseExpiry && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.licenseExpiry}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    从业资格证号
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.qualificationCert}
+                    onChange={(e) => handleFormChange('qualificationCert', e.target.value)}
+                    placeholder="请输入从业资格证号"
+                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    从业资格证有效期
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.qualificationExpiry}
+                    onChange={(e) => handleFormChange('qualificationExpiry', e.target.value)}
+                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    体检有效期
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.physicalExpiry}
+                    onChange={(e) => handleFormChange('physicalExpiry', e.target.value)}
+                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="font-semibold text-neutral-800 flex items-center gap-2">
+                <div className="w-1 h-5 bg-success-500 rounded-full" />
+                紧急联系人
+              </h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    姓名
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.emergencyContact.name}
+                    onChange={(e) => handleEmergencyContactChange('name', e.target.value)}
+                    placeholder="请输入紧急联系人姓名"
+                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    联系电话
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.emergencyContact.phone}
+                    onChange={(e) => handleEmergencyContactChange('phone', e.target.value)}
+                    placeholder="请输入联系电话"
+                    className={classNames(
+                      'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
+                      formErrors.emergencyPhone ? 'border-danger-400' : 'border-neutral-300'
+                    )}
+                  />
+                  {formErrors.emergencyPhone && (
+                    <p className="text-xs text-danger-500 mt-1">{formErrors.emergencyPhone}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    关系
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.emergencyContact.relationship}
+                    onChange={(e) => handleEmergencyContactChange('relationship', e.target.value)}
+                    placeholder="如：配偶、父母"
+                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   );
 }
