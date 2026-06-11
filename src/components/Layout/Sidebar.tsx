@@ -11,8 +11,9 @@ import {
   ChevronRight,
   MapPin,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { classNames } from '@/utils';
+import { useAuthStore } from '@/store/useAuthStore';
 
 interface MenuItem {
   path: string;
@@ -58,6 +59,28 @@ const menuItems: MenuItem[] = [
 export default function Sidebar({ collapsed, onToggle, isMobileOpen = false, onCloseMobile }: SidebarProps) {
   const [expandedMenus, setExpandedMenus] = useState<string[]>(['/tasks', '/system']);
   const location = useLocation();
+  const hasPathPermission = useAuthStore((state) => state.hasPathPermission);
+
+  const filteredMenuItems = useMemo(() => {
+    const filterItems = (items: MenuItem[]): MenuItem[] => {
+      return items
+        .map((item) => {
+          if (item.children && item.children.length > 0) {
+            const filteredChildren = filterItems(item.children);
+            if (filteredChildren.length === 0) {
+              return null;
+            }
+            return { ...item, children: filteredChildren };
+          }
+          if (!hasPathPermission(item.path)) {
+            return null;
+          }
+          return item;
+        })
+        .filter((item): item is MenuItem => item !== null);
+    };
+    return filterItems(menuItems);
+  }, [hasPathPermission]);
 
   const toggleMenu = (path: string) => {
     setExpandedMenus((prev) =>
@@ -164,7 +187,7 @@ export default function Sidebar({ collapsed, onToggle, isMobileOpen = false, onC
       </div>
 
       <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
-        {menuItems.map((item) => renderMenuItem(item))}
+        {filteredMenuItems.map((item) => renderMenuItem(item))}
       </nav>
 
       <div className="p-2 border-t border-neutral-200">

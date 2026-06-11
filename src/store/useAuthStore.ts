@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { User, Role } from '@/types';
+import { MODULES, MODULE_PERMISSIONS } from '@/types';
 import { mockUsers } from '@/services/mock/data';
 
 interface AuthState {
@@ -16,6 +17,9 @@ interface AuthState {
   updateUser: (id: string, data: Partial<User>) => Promise<User>;
   deleteUser: (id: string) => Promise<boolean>;
   hasPermission: (permission: string) => boolean;
+  hasModulePermission: (moduleName: string) => boolean;
+  hasPathPermission: (path: string) => boolean;
+  getAccessibleModules: () => string[];
 }
 
 const rolePermissions: Record<Role, string[]> = {
@@ -95,5 +99,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const permissions = rolePermissions[currentUser.role];
     if (permissions.includes('*')) return true;
     return permissions.includes(permission);
+  },
+
+  hasModulePermission: (moduleName: string) => {
+    const { currentUser } = get();
+    if (!currentUser) return false;
+    const modules = MODULE_PERMISSIONS[currentUser.role];
+    if (modules.includes('*')) return true;
+    return modules.includes(moduleName);
+  },
+
+  hasPathPermission: (path: string) => {
+    const moduleInfo = MODULES[path];
+    if (!moduleInfo) return true;
+    return get().hasModulePermission(moduleInfo.module);
+  },
+
+  getAccessibleModules: () => {
+    const { currentUser } = get();
+    if (!currentUser) return [];
+    const modules = MODULE_PERMISSIONS[currentUser.role];
+    if (modules.includes('*')) {
+      return Object.values(MODULES).map(m => m.module);
+    }
+    return modules;
   },
 }));

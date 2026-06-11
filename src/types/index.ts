@@ -377,6 +377,28 @@ export const ROLES: Record<Role, { label: string; description: string; color: st
   },
 };
 
+export const MODULES: Record<string, { name: string; module: string }> = {
+  '/': { name: '仪表盘', module: '仪表盘' },
+  '/vehicles': { name: '车辆管理', module: '车辆管理' },
+  '/tasks': { name: '任务调度', module: '任务调度' },
+  '/tasks/tracking': { name: '实时跟踪', module: '任务调度' },
+  '/drivers': { name: '驾驶员管理', module: '驾驶员管理' },
+  '/statistics': { name: '运输统计', module: '运输统计' },
+  '/safety': { name: '安全监控', module: '安全监控' },
+  '/system': { name: '系统管理', module: '系统管理' },
+  '/system/users': { name: '用户管理', module: '系统管理' },
+  '/system/permissions': { name: '权限配置', module: '系统管理' },
+  '/system/backup': { name: '数据备份', module: '系统管理' },
+};
+
+export const MODULE_PERMISSIONS: Record<Role, string[]> = {
+  admin: ['*'],
+  manager: ['仪表盘', '车辆管理', '任务调度', '驾驶员管理', '运输统计', '安全监控'],
+  dispatcher: ['仪表盘', '车辆管理', '任务调度', '驾驶员管理', '运输统计'],
+  safety_officer: ['仪表盘', '安全监控', '车辆管理', '驾驶员管理', '运输统计'],
+  fleet_captain: ['仪表盘', '车辆管理', '驾驶员管理', '任务调度', '运输统计', '安全监控'],
+};
+
 export const USER_STATUS: Record<User['status'], { label: string; class: string; color: string }> = {
   active: { label: '正常', class: 'badge-success', color: '#10B981' },
   inactive: { label: '禁用', class: 'badge-neutral', color: '#6B7280' },
